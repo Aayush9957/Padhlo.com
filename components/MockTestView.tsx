@@ -1,15 +1,12 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { generateMockTest, analyzeFullMockTestStream, getApiErrorMessage } from '../services/geminiService';
 import { View, MockTestFormat, MockTestQuestion, SubjectiveAnswer, ScoreRecord } from '../types';
 import Spinner from './Spinner';
-import BackButton from './BackButton';
 import SkeletonLoader from './SkeletonLoader';
 import ErrorMessage from './ErrorMessage';
-import { saveScore, extractFinalJson } from '../utils/testUtils';
+import { extractFinalJson } from '../testUtils';
 
-// Add type definitions for window properties from CDNs to satisfy TypeScript
 declare global {
   interface Window {
     marked: {
@@ -78,7 +75,13 @@ const TextQuestionComponent: React.FC<{
 };
 
 
-const MockTestView: React.FC<{ sectionName: string; subjectName: string; setView: (view: View) => void; goBack: () => void; }> = ({ sectionName, subjectName, setView, goBack }) => {
+const MockTestView: React.FC<{ 
+  sectionName: string; 
+  subjectName: string; 
+  setView: (view: View) => void;
+  onSaveScore: (scoreData: Omit<ScoreRecord, 'id' | 'date'>) => void;
+  setIsViewDirty: (isDirty: boolean) => void;
+}> = ({ sectionName, subjectName, setView, onSaveScore, setIsViewDirty }) => {
   const [testData, setTestData] = useState<MockTestFormat | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,19 +97,26 @@ const MockTestView: React.FC<{ sectionName: string; subjectName: string; setView
       try {
         setLoading(true);
         setError(null);
+        setIsViewDirty(false);
         const generatedTest = await generateMockTest(sectionName, subjectName);
         
         const parsedTest = JSON.parse(generatedTest);
         setTestData(parsedTest);
+        setIsViewDirty(true);
 
       } catch (err) {
         setError(getApiErrorMessage(err, 'Failed to generate mock test. The format might be invalid or incomplete.'));
+        setIsViewDirty(false);
         console.error(err);
       } finally {
         setLoading(false);
       }
     };
     fetchTest();
+    
+    return () => {
+        setIsViewDirty(false);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sectionName, subjectName]);
 
@@ -117,7 +127,8 @@ const MockTestView: React.FC<{ sectionName: string; subjectName: string; setView
   const handleFinishTest = () => {
     if (!testData) return;
     if (!window.confirm("Are you sure you want to submit your test for grading? You won't be able to change your answers.")) return;
-
+    
+    setIsViewDirty(false);
     setIsTestFinished(true);
     setIsAnalyzing(true);
     setAnalysisReport('');
@@ -136,7 +147,7 @@ const MockTestView: React.FC<{ sectionName: string; subjectName: string; setView
             if (reportJson && reportJson.final_score_report) {
                 const score = reportJson.final_score_report.score;
                 setFinalScore(score);
-                saveScore({
+                onSaveScore({
                     testCategory: `Mock Test: ${subjectName}`,
                     score: score,
                     totalMarks: 80
@@ -154,17 +165,13 @@ const MockTestView: React.FC<{ sectionName: string; subjectName: string; setView
 
   let questionCounter = 0;
   const totalQuestions = testData ? testData.sections.reduce((acc, s) => acc + s.questions.length, 0) : 0;
-  // Fix: Explicitly type `a` as `SubjectiveAnswer` to resolve TypeScript error.
+  // Fix: Explicitly type parameter in `filter` to avoid potential TypeScript inference issues.
   const answeredQuestions = Object.values(answers).filter((a: SubjectiveAnswer) => a.text?.trim() || a.image).length;
   const allAnswered = totalQuestions > 0 && answeredQuestions === totalQuestions;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      <div className="no-print">
-        <BackButton onClick={goBack} />
-      </div>
-
-      <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2 mt-6 print:mt-0">Mock Test: {subjectName}</h2>
+      <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2 print:mt-0">Mock Test: {subjectName}</h2>
       <p className="text-lg text-slate-600 dark:text-slate-400 mb-6 no-print">{sectionName}</p>
       
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 min-h-[300px] printable-content">

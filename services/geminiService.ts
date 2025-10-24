@@ -1,5 +1,6 @@
 
 
+
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { CaseStudy, MCQ, UserProfile, MockTestFormat, SubjectiveAnswer } from "../types";
 
@@ -56,14 +57,14 @@ const checkRateLimit = () => {
     lastApiCallTimestamp = now;
 };
 
-const rateLimitedApiCall = async <T>(cacheKey: string, apiCall: () => Promise<T>): Promise<T> => {
+const rateLimitedApiCall = async <T extends GenerateContentResponse>(cacheKey: string, apiCall: () => Promise<T>): Promise<T> => {
     const cachedResponse = getSessionCache(cacheKey);
     if (cachedResponse) {
         return Promise.resolve({ text: cachedResponse } as T);
     }
     checkRateLimit();
     const response = await apiCall();
-    const responseText = (response as any).text;
+    const responseText = response.text;
     if (responseText && typeof responseText === 'string' && !responseText.toLowerCase().includes('error')) {
         setSessionCache(cacheKey, responseText);
     }
@@ -130,8 +131,6 @@ const extractJson = (text: string): string => {
     else start = Math.min(firstBracket, firstSquare);
 
     if (start === -1) {
-        // If no JSON-like structure is found, return the original text
-        // and let the parser throw an error, which can be handled upstream.
         return text;
     }
 
@@ -146,13 +145,9 @@ const extractJson = (text: string): string => {
     return text.substring(start, end + 1).trim();
 };
 
-const IMAGE_API_COOLDOWN_MS = 15000; // Increased to 15 seconds for very strict rate limits
+const IMAGE_API_COOLDOWN_MS = 15000;
 let lastImageApiCallTimestamp = 0;
 
-/**
- * Pauses execution to ensure a minimum cooldown period between image generation calls,
- * preventing API rate limit errors without halting the entire process.
- */
 const enforceImageRateLimit = async (): Promise<void> => {
     const now = Date.now();
     const timeSinceLastCall = now - lastImageApiCallTimestamp;
@@ -164,45 +159,15 @@ const enforceImageRateLimit = async (): Promise<void> => {
     lastImageApiCallTimestamp = Date.now();
 };
 
-// --- MODULE: NoteGenerator ---
-const NoteGenerator = {
-    /**
-     * Generates a diagram using Imagen and streams it back as Markdown.
-     * Internal helper for generateChapterNotesStream.
-     */
-    async _generateAndStreamDiagram(prompt: string, onChunk: (chunk: string) => void) {
-        try {
-            await enforceImageRateLimit(); // Wait for cooldown before making the call
-            const ai = getAiInstance();
-            const response = await ai.models.generateImages({
-                model: 'imagen-4.0-generate-001',
-                prompt: `Generate a clear, accurate, and simple scientific diagram for educational purposes, suitable for a student. The diagram should be well-labeled. Topic: ${prompt}`,
-                config: {
-                    numberOfImages: 1,
-                    outputMimeType: 'image/png',
-                    aspectRatio: '16:9',
-                },
-            });
-            if (response.generatedImages && response.generatedImages.length > 0) {
-                const base64Image = response.generatedImages[0].image.imageBytes;
-                const imageMarkdown = `\n\n![Diagram for: ${prompt}](data:image/png;base64,${base64Image})\n\n`;
-                onChunk(imageMarkdown);
-            } else {
-                onChunk(`\n\n[Notice: An image was requested but not generated for "${prompt}"]\n\n`);
-            }
-        } catch (e) {
-            console.error("Diagram generation failed:", e);
-            const errorMessage = getApiErrorMessage(e, `Could not generate diagram for "${prompt}"`);
-            onChunk(`\n\n[Error: ${errorMessage}]\n\n`);
-        }
-    },
-    /**
+
+// --- MODULE: DiagramGenerator ---
+const DiagramGenerator = {
+     /**
      * Generates a diagram and returns the markdown string.
-     * Internal helper for generateChapterNotesText.
      */
-     async _generateDiagramMarkdown(prompt: string): Promise<string> {
+     async generateDiagram(prompt: string): Promise<string> {
         try {
-            await enforceImageRateLimit(); // Wait for cooldown before making the call
+            await enforceImageRateLimit();
             const ai = getAiInstance();
             const response = await ai.models.generateImages({
                 model: 'imagen-4.0-generate-001',
@@ -223,11 +188,15 @@ const NoteGenerator = {
             const errorMessage = getApiErrorMessage(e, `Could not generate diagram for "${prompt}"`);
             return `\n\n[Error: ${errorMessage}]\n\n`;
         }
-    },
+    }
+};
 
+
+// --- MODULE: NoteGenerator ---
+const NoteGenerator = {
     /**
-     * Generates and streams comprehensive study notes for a specific chapter,
-     * including dynamically generated diagrams.
+     * Generates and streams comprehensive study notes for a specific chapter.
+     * Diagrams are NOT generated here; placeholders are inserted instead.
      */
     async generateChapterNotesStream(
       sectionName: string,
@@ -239,28 +208,12 @@ const NoteGenerator = {
       onError: (error: string) => void
     ) {
       const profileKey = userProfile ? `${userProfile.standard}-${userProfile.exams.sort().join('-')}` : 'default';
-      const cacheKey = `notes-${sectionName}-${subjectName}-${chapterName}-${profileKey}`;
+      const cacheKey = `notes-text-only-${sectionName}-${subjectName}-${chapterName}-${profileKey}`;
       
-      const processTextWithDiagrams = async (text: string) => {
-        let buffer = text;
-        let lastMatchEnd = 0;
-        const diagramRegex = /\[DIAGRAM_PROMPT:"(.*?)"\]/g;
-        let match;
-        while ((match = diagramRegex.exec(buffer)) !== null) {
-          const preText = buffer.substring(lastMatchEnd, match.index);
-          onChunk(preText);
-          const diagramPrompt = match[1];
-          await NoteGenerator._generateAndStreamDiagram(diagramPrompt, onChunk);
-          lastMatchEnd = match.index + match[0].length;
-        }
-        const remainingText = buffer.substring(lastMatchEnd);
-        onChunk(remainingText);
-      };
-
       try {
         const cachedResponse = getSessionCache(cacheKey);
         if (cachedResponse) {
-            await processTextWithDiagrams(cachedResponse);
+            onChunk(cachedResponse);
             onComplete(cachedResponse);
             return;
         }
@@ -281,47 +234,29 @@ const NoteGenerator = {
         }
 
         const prompt = `
-        You are an expert teacher with a knack for making complex topics simple and engaging. Your tone should be encouraging, clear, and human-like, as if you're explaining concepts to a student one-on-one. Provide comprehensive, well-structured study notes for the chapter "${chapterName}" from the subject "${subjectName}", specifically tailored ${tailoringInstruction}
+        You are an expert teacher. Provide comprehensive, well-structured study notes for the chapter "${chapterName}" from the subject "${subjectName}", tailored ${tailoringInstruction}
 
-        The notes must be formatted in Markdown and should include the following sections:
+        The notes must be in Markdown and include:
+        1.  **Introduction**: An engaging overview.
+        2.  **Core Concepts**: Detailed explanations with headings, subheadings, and bullet points. 
+            **IMPORTANT**: When a complex concept needs a visual diagram, insert a placeholder using this exact syntax on a new line:
+            \`[LOAD_DIAGRAM_PROMPT:"A detailed scientific diagram of..."]\`
+            Do not generate the image yourself. Just insert the placeholder. You can continue to use Mermaid.js diagrams and Markdown tables.
+        3.  **Key Takeaways**: A concise summary.
 
-        1.  **Introduction**: A brief, engaging overview of the chapter's main concepts and why they're important.
-        2.  **Core Concepts**: A detailed explanation of all important topics and sub-topics. Use clear headings, subheadings, and bullet points. Explain complex ideas with simple, relatable analogies and real-world examples. 
-            **Crucially, integrate visual aids throughout this section to simplify complex information.** When a complex scientific concept is introduced that would be best explained with a visual diagram (e.g., the Krebs cycle, structure of a DNA molecule, process of mitosis), use the following special syntax on a new line to request one:
-            \`[DIAGRAM_PROMPT:"A detailed scientific diagram of..."]\`
-            You can also continue to use Mermaid.js diagrams (like flowcharts, mind maps, or sequence diagrams) and Markdown tables wherever they can help illustrate a point. Enclose all Mermaid syntax in a 'mermaid' code block.
-        3.  **Key Takeaways**: A concise summary of the most important points from the chapter, presented as easy-to-remember bullet points.
-
-        Ensure the content is accurate and relevant to the NCERT 2025 syllabus.
+        Ensure content is accurate and relevant to the NCERT 2025 syllabus.
         `;
 
         const ai = getAiInstance();
         const responseStream = await ai.models.generateContentStream({ model, contents: prompt });
 
         let fullText = '';
-        let buffer = '';
         for await (const chunk of responseStream) {
             const text = chunk.text;
             if (text) {
                 fullText += text;
-                buffer += text;
-                
-                let lastMatchEnd = 0;
-                const diagramRegex = /\[DIAGRAM_PROMPT:"(.*?)"\]/g;
-                let match;
-
-                while ((match = diagramRegex.exec(buffer)) !== null) {
-                    const preText = buffer.substring(lastMatchEnd, match.index);
-                    onChunk(preText);
-                    const diagramPrompt = match[1];
-                    await NoteGenerator._generateAndStreamDiagram(diagramPrompt, onChunk);
-                    lastMatchEnd = match.index + match[0].length;
-                }
-                buffer = buffer.substring(lastMatchEnd);
+                onChunk(text);
             }
-        }
-        if (buffer) {
-            onChunk(buffer);
         }
         setSessionCache(cacheKey, fullText);
         onComplete(fullText);
@@ -332,8 +267,8 @@ const NoteGenerator = {
     },
     
     /**
-     * Generates full chapter notes as a single text block, including diagrams.
-     * Non-streaming for direct downloads.
+     * Generates chapter notes as a single text block, without diagrams.
+     * Non-streaming for use cases that need the text first (e.g., downloads, video summaries).
      */
     async generateChapterNotesText(
       sectionName: string,
@@ -342,33 +277,18 @@ const NoteGenerator = {
       userProfile: UserProfile | null
     ): Promise<string> {
         const profileKey = userProfile ? `${userProfile.standard}-${userProfile.exams.sort().join('-')}` : 'default';
-        const cacheKey = `notes-${sectionName}-${subjectName}-${chapterName}-${profileKey}`;
-
-        const processTextWithDiagrams = async (text: string): Promise<string> => {
-            const diagramRegex = /\[DIAGRAM_PROMPT:"(.*?)"\]/g;
-            const matches = [...text.matchAll(diagramRegex)];
-            let processedText = text;
-
-            for (const match of matches) {
-                const fullMatch = match[0];
-                const prompt = match[1];
-                const diagramMarkdown = await NoteGenerator._generateDiagramMarkdown(prompt);
-                processedText = processedText.replace(fullMatch, diagramMarkdown);
-            }
-            return processedText;
-        };
+        const cacheKey = `notes-text-only-${sectionName}-${subjectName}-${chapterName}-${profileKey}`;
 
         try {
             const cachedResponse = getSessionCache(cacheKey);
             if (cachedResponse) {
-                // We still need to process diagrams even for cached text, as images aren't cached
-                return await processTextWithDiagrams(cachedResponse);
+                return cachedResponse;
             }
 
             checkRateLimit();
 
             let tailoringInstruction = `for a "${sectionName}" student.`;
-            if (userProfile) { 
+             if (userProfile) { 
                  const standard = userProfile.standard;
                 const exams = userProfile.exams.join(', ');
                 if (standard && exams) {
@@ -380,18 +300,17 @@ const NoteGenerator = {
                 }
             }
             const prompt = `
-            You are an expert teacher with a knack for making complex topics simple and engaging. Your tone should be encouraging, clear, and human-like, as if you're explaining concepts to a student one-on-one. Provide comprehensive, well-structured study notes for the chapter "${chapterName}" from the subject "${subjectName}", specifically tailored ${tailoringInstruction}
+            You are an expert teacher. Provide comprehensive, well-structured study notes for the chapter "${chapterName}" from the subject "${subjectName}", tailored ${tailoringInstruction}
 
-            The notes must be formatted in Markdown and should include the following sections:
+            The notes must be in Markdown and include:
+            1.  **Introduction**: An engaging overview.
+            2.  **Core Concepts**: Detailed explanations with headings, subheadings, and bullet points. 
+                **IMPORTANT**: When a complex concept needs a visual diagram, insert a placeholder using this exact syntax on a new line:
+                \`[LOAD_DIAGRAM_PROMPT:"A detailed scientific diagram of..."]\`
+                Do not generate the image yourself. Just insert the placeholder. You can continue to use Mermaid.js diagrams and Markdown tables.
+            3.  **Key Takeaways**: A concise summary.
 
-            1.  **Introduction**: A brief, engaging overview of the chapter's main concepts and why they're important.
-            2.  **Core Concepts**: A detailed explanation of all important topics and sub-topics. Use clear headings, subheadings, and bullet points. Explain complex ideas with simple, relatable analogies and real-world examples. 
-                **Crucially, integrate visual aids throughout this section to simplify complex information.** When a complex scientific concept is introduced that would be best explained with a visual diagram (e.g., the Krebs cycle, structure of a DNA molecule, process of mitosis), use the following special syntax on a new line to request one:
-                \`[DIAGRAM_PROMPT:"A detailed scientific diagram of..."]\`
-                You can also continue to use Mermaid.js diagrams (like flowcharts, mind maps, or sequence diagrams) and Markdown tables wherever they can help illustrate a point. Enclose all Mermaid syntax in a 'mermaid' code block.
-            3.  **Key Takeaways**: A concise summary of the most important points from the chapter, presented as easy-to-remember bullet points.
-
-            Ensure the content is accurate and relevant to the NCERT 2025 syllabus.
+            Ensure content is accurate and relevant to the NCERT 2025 syllabus.
             `;
 
             const ai = getAiInstance();
@@ -399,13 +318,13 @@ const NoteGenerator = {
             
             const fullText = response.text;
             if (fullText) {
-                setSessionCache(cacheKey, fullText); // Cache the text before processing images
-                return await processTextWithDiagrams(fullText);
+                setSessionCache(cacheKey, fullText);
+                return fullText;
             }
             throw new Error("Received empty response from AI.");
 
         } catch (error) {
-            throw new Error(getApiErrorMessage(error, "Failed to generate notes for download."));
+            throw new Error(getApiErrorMessage(error, "Failed to generate notes."));
         }
     }
 };
@@ -533,9 +452,10 @@ const TestGenerator = {
             const ai = getAiInstance();
             const cacheKey = `mockTest-${sectionName}-${subjectName}`;
             const response = await rateLimitedApiCall<GenerateContentResponse>(cacheKey, () => ai.models.generateContent({
-                model,
+                model: 'gemini-2.5-pro',
                 contents: prompt,
                 config: {
+                    thinkingConfig: { thinkingBudget: 32768 },
                     responseMimeType: "application/json",
                     responseSchema: {
                         type: Type.OBJECT,
@@ -684,7 +604,7 @@ const AnswerAnalyzer = {
             const ai = getAiInstance();
             const imagePart = await fileToGenerativePart(imageFile);
             const responseStream = await ai.models.generateContentStream({
-                model: fastModel,
+                model: model,
                 contents: { parts: [{ text: prompt }, imagePart] },
             });
             for await (const chunk of responseStream) {
@@ -935,9 +855,85 @@ const FlashcardGenerator = {
     }
 };
 
+// Fix: Add VideoGenerator module and generateVideoSummary function
+// --- MODULE: VideoGenerator ---
+const VideoGenerator = {
+    /**
+     * Generates a short video summary of a chapter.
+     */
+    async generateVideoSummary(
+        chapterName: string,
+        chapterContent: string,
+        onStatusUpdate: (status: string) => void
+    ): Promise<string> {
+        try {
+            const ai = getAiInstance();
+            
+            onStatusUpdate("Crafting a script for the video summary...");
+            const prompt = `Create a short, engaging, 60-second educational video summary for the chapter "${chapterName}".
+            The video should cover the main topics from the following notes:
+            ---
+            ${chapterContent.substring(0, 4000)}
+            ---
+            The video should be visually appealing with clear explanations, suitable for a student. Use stock footage or animations. Focus on key concepts.
+            `;
+            
+            onStatusUpdate("Sending request to the video model...");
+            let operation = await ai.models.generateVideos({
+                model: 'veo-3.1-fast-generate-preview',
+                prompt: prompt,
+                config: {
+                    numberOfVideos: 1,
+                    resolution: '720p',
+                    aspectRatio: '16:9'
+                }
+            });
+            
+            onStatusUpdate("Video generation is in progress... This may take a few minutes.");
+            while (!operation.done) {
+                await new Promise(resolve => setTimeout(resolve, 10000)); // Poll every 10 seconds
+                operation = await ai.operations.getVideosOperation({ operation: operation });
+            }
+
+            onStatusUpdate("Finalizing video...");
+            const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+
+            if (!downloadLink) {
+                throw new Error("Video generation completed, but no download link was found.");
+            }
+            
+            const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
+            if (!apiKey) {
+                throw new Error("API_KEY environment variable not set, cannot fetch video.");
+            }
+            const fullUrl = `${downloadLink}&key=${apiKey}`;
+
+            onStatusUpdate("Downloading video...");
+            const response = await fetch(fullUrl);
+            if (!response.ok) {
+                const errorBody = await response.text();
+                console.error("Video download failed with body:", errorBody);
+                throw new Error(`Failed to download video. Status: ${response.status}`);
+            }
+            const videoBlob = await response.blob();
+            const objectUrl = URL.createObjectURL(videoBlob);
+            
+            return objectUrl;
+
+        } catch (e: any) {
+            console.error("Video generation failed:", e);
+            if (e.message?.includes('Requested entity was not found')) {
+                 throw new Error("Video generation failed. This might be an API key error. Please try selecting your API key again.");
+            }
+            const errorMessage = getApiErrorMessage(e, "Could not generate the video summary.");
+            throw new Error(errorMessage);
+        }
+    }
+};
+
 
 // --- PUBLIC API EXPORTS ---
-// This maintains the original, flat export structure, so no component imports need to be changed.
+export const { generateDiagram } = DiagramGenerator;
 export const { generateChapterNotesStream, generateChapterNotesText } = NoteGenerator;
 export const {
     generateLongAnswerQuestions,
@@ -954,3 +950,5 @@ export const {
     analyzeFullMockTestStream
 } = AnswerAnalyzer;
 export const { generateFlashcards } = FlashcardGenerator;
+// Fix: Export the new video generation function
+export const { generateVideoSummary } = VideoGenerator;

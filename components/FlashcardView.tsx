@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Flashcard } from '../types';
 import { generateFlashcards, getApiErrorMessage } from '../services/geminiService';
-import BackButton from './BackButton';
 import SkeletonLoader from './SkeletonLoader';
 import ErrorMessage from './ErrorMessage';
 import LoadingView from './LoadingView';
@@ -12,10 +11,9 @@ interface FlashcardViewProps {
   subjectName: string;
   chapterName: string;
   setView: (view: View) => void;
-  goBack: () => void;
 }
 
-const FlashcardView: React.FC<FlashcardViewProps> = ({ sectionName, subjectName, chapterName, setView, goBack }) => {
+const FlashcardView: React.FC<FlashcardViewProps> = ({ sectionName, subjectName, chapterName, setView }) => {
   const [allFlashcards, setAllFlashcards] = useState<Flashcard[]>([]);
   const [currentDeck, setCurrentDeck] = useState<Flashcard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,8 +168,7 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ sectionName, subjectName,
       `}</style>
       
       <div className="flex-shrink-0">
-        <BackButton onClick={goBack} />
-        <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-4 mb-2">Flashcards: {chapterName}</h2>
+        <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">Flashcards: {chapterName}</h2>
       </div>
 
       {currentDeck.length > 0 && !showSummary && (

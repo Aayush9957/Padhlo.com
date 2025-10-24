@@ -1,31 +1,29 @@
+
 import React, { useState, useEffect } from 'react';
 import { generateMCQs, analyzeMCQPerformanceStream, getApiErrorMessage } from '../services/geminiService';
 import { View, MCQ, ScoreRecord } from '../types';
 import Spinner from './Spinner';
-import BackButton from './BackButton';
 import SkeletonLoader from './SkeletonLoader';
 import ErrorMessage from './ErrorMessage';
-import { saveScore } from '../utils/testUtils';
+
+declare global {
+    interface Window {
+        marked: {
+            parse(markdown: string): string;
+        };
+    }
+}
 
 interface MCQsViewProps {
   sectionName: string;
   subjectName: string;
   chapters: string[];
   setView: (view: View) => void;
-  goBack: () => void;
+  onSaveScore: (scoreData: Omit<ScoreRecord, 'id' | 'date'>) => void;
+  setIsViewDirty: (isDirty: boolean) => void;
 }
 
-const createStorageKey = (sectionName: string, subjectName: string, chapters: string[], testType: string): string => {
-    const sortedChapters = [...chapters].sort().join(',');
-    return `progress-${sectionName}-${subjectName}-${testType}-${sortedChapters}`;
-};
-
-const createCacheKey = (sectionName: string, subjectName: string, chapters: string[], testType: string): string => {
-    const sortedChapters = [...chapters].sort().join(',');
-    return `${testType}-${sectionName}-${subjectName}-${sortedChapters}`;
-}
-
-const MCQsView: React.FC<MCQsViewProps> = ({ sectionName, subjectName, chapters, setView, goBack }) => {
+const MCQsView: React.FC<MCQsViewProps> = ({ sectionName, subjectName, chapters, setView, onSaveScore, setIsViewDirty }) => {
   const [mcqs, setMcqs] = useState<MCQ[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,76 +34,39 @@ const MCQsView: React.FC<MCQsViewProps> = ({ sectionName, subjectName, chapters,
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisReport, setAnalysisReport] = useState('');
   const [completionTime, setCompletionTime] = useState<string | null>(null);
-  const storageKey = createStorageKey(sectionName, subjectName, chapters, 'mcqs');
-
-  const fetchMCQs = async (replace: boolean = false) => {
+  
+  const fetchMCQs = async () => {
+    setIsViewDirty(false);
     setLoading(true);
     setError(null);
     try {
       const generated = await generateMCQs(sectionName, subjectName, chapters, 10);
-      const newMcqs = JSON.parse(generated);
-      if (replace) {
-        setMcqs(newMcqs);
-        setSelectedAnswers({});
-        setSubmitted({});
-        setIsTestFinished(false);
-        setAnalysisReport('');
-        setScore(null);
-        setCompletionTime(null);
-      } else {
-        setMcqs(prev => [...prev, ...newMcqs]);
-      }
+      setMcqs(JSON.parse(generated));
+      setSelectedAnswers({});
+      setSubmitted({});
+      setIsTestFinished(false);
+      setAnalysisReport('');
+      setScore(null);
+      setCompletionTime(null);
+      setIsViewDirty(true);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to generate MCQs. Please try again.'));
+      setIsViewDirty(false);
       console.error(err);
     } finally {
       setLoading(false);
     }
   };
-  
-  const handleClearProgress = () => {
-    if (window.confirm("Are you sure you want to clear your progress and start a new test?")) {
-        localStorage.removeItem(storageKey);
-        sessionStorage.removeItem(createCacheKey(sectionName, subjectName, chapters, 'mcqs'));
-        fetchMCQs(true);
-    }
-  };
 
   useEffect(() => {
-    const savedProgressRaw = localStorage.getItem(storageKey);
-    if (savedProgressRaw) {
-        if (window.confirm("You have a saved test session. Would you like to resume?")) {
-            try {
-                const savedProgress = JSON.parse(savedProgressRaw);
-                if (savedProgress.mcqs && savedProgress.mcqs.length > 0) {
-                    setMcqs(savedProgress.mcqs);
-                    setSelectedAnswers(savedProgress.selectedAnswers || {});
-                    setSubmitted(savedProgress.submitted || {});
-                    setLoading(false);
-                    return; 
-                }
-            } catch (e) {
-                console.error("Failed to parse saved progress, starting new test.", e);
-                localStorage.removeItem(storageKey);
-            }
-        } else {
-            localStorage.removeItem(storageKey);
-        }
-    }
-    fetchMCQs(true);
+    fetchMCQs();
+
+    return () => {
+        setIsViewDirty(false);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageKey]);
+  }, [sectionName, subjectName, JSON.stringify(chapters)]);
 
-  useEffect(() => {
-    if (mcqs.length > 0 && !loading && !isTestFinished) {
-        const progress = {
-            mcqs,
-            selectedAnswers,
-            submitted
-        };
-        localStorage.setItem(storageKey, JSON.stringify(progress));
-    }
-  }, [mcqs, selectedAnswers, submitted, storageKey, loading, isTestFinished]);
 
   const handleSelectAnswer = (mcqIndex: number, answer: string) => {
     if (submitted[mcqIndex]) return;
@@ -121,6 +82,7 @@ const MCQsView: React.FC<MCQsViewProps> = ({ sectionName, subjectName, chapters,
   }
 
     const handleFinishTest = () => {
+        setIsViewDirty(false);
         let correctCount = 0;
         mcqs.forEach((mcq, index) => {
             if (selectedAnswers[index] === mcq.correctAnswer) {
@@ -130,9 +92,8 @@ const MCQsView: React.FC<MCQsViewProps> = ({ sectionName, subjectName, chapters,
         setScore(correctCount);
         setCompletionTime(new Date().toLocaleString());
         setIsTestFinished(true);
-        localStorage.removeItem(storageKey); // Clear in-progress test
 
-        saveScore({
+        onSaveScore({
             testCategory: `MCQs Practice: ${subjectName}`,
             score: correctCount,
             totalMarks: 10,
@@ -169,7 +130,6 @@ const MCQsView: React.FC<MCQsViewProps> = ({ sectionName, subjectName, chapters,
   if (loading && mcqs.length === 0 && !error) {
       return (
           <div className="p-4 sm:p-6 lg:p-8">
-              <BackButton onClick={goBack} />
               <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">MCQs Practice: {subjectName}</h2>
               <SkeletonLoader type="card" count={10} />
           </div>
@@ -178,16 +138,15 @@ const MCQsView: React.FC<MCQsViewProps> = ({ sectionName, subjectName, chapters,
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-        <div className="flex justify-between items-center">
-            <BackButton onClick={goBack} />
+        <div className="flex justify-end items-center mb-4">
             <button
-                onClick={handleClearProgress}
+                onClick={fetchMCQs}
                 className="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 border border-transparent rounded-md hover:bg-red-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 transition-colors"
             >
                 Start New Test
             </button>
         </div>
-      <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-4 mb-2">MCQs Practice: {subjectName}</h2>
+      <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">MCQs Practice: {subjectName}</h2>
       
       {error && <ErrorMessage title="Failed to Load MCQs" message={error} />}
       

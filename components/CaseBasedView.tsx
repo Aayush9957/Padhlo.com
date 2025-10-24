@@ -1,15 +1,12 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { generateCaseBasedQuestions, analyzeSubjectiveTestStream, getApiErrorMessage } from '../services/geminiService';
 import { View, CaseStudy, ScoreRecord, SubjectiveAnswer } from '../types';
 import Spinner from './Spinner';
-import BackButton from './BackButton';
 import SkeletonLoader from './SkeletonLoader';
 import ErrorMessage from './ErrorMessage';
-import { saveScore, extractFinalJson } from '../utils/testUtils';
+import { extractFinalJson } from '../testUtils';
 
-// Add type definitions for window properties from CDNs to satisfy TypeScript
 declare global {
   interface Window {
     marked: {
@@ -18,20 +15,16 @@ declare global {
   }
 }
 
-const createStorageKey = (sectionName: string, subjectName: string, chapters: string[], testType: string): string => {
-    const sortedChapters = [...chapters].sort().join(',');
-    return `progress-${sectionName}-${subjectName}-${testType}-${sortedChapters}`;
-};
-
 interface CaseBasedViewProps {
   sectionName: string;
   subjectName: string;
   chapters: string[];
   setView: (view: View) => void;
-  goBack: () => void;
+  onSaveScore: (scoreData: Omit<ScoreRecord, 'id' | 'date'>) => void;
+  setIsViewDirty: (isDirty: boolean) => void;
 }
 
-const CaseBasedView: React.FC<CaseBasedViewProps> = ({ sectionName, subjectName, chapters, setView, goBack }) => {
+const CaseBasedView: React.FC<CaseBasedViewProps> = ({ sectionName, subjectName, chapters, setView, onSaveScore, setIsViewDirty }) => {
   const [cases, setCases] = useState<CaseStudy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,10 +34,9 @@ const CaseBasedView: React.FC<CaseBasedViewProps> = ({ sectionName, subjectName,
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisReport, setAnalysisReport] = useState('');
   const [finalScore, setFinalScore] = useState<number | null>(null);
-
-  const storageKey = createStorageKey(sectionName, subjectName, chapters, 'caseBased');
-
+  
   const fetchCases = async () => {
+    setIsViewDirty(false);
     setLoading(true);
     setError(null);
     try {
@@ -55,25 +47,24 @@ const CaseBasedView: React.FC<CaseBasedViewProps> = ({ sectionName, subjectName,
       setIsTestFinished(false);
       setAnalysisReport('');
       setFinalScore(null);
+      setIsViewDirty(true);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Failed to generate questions. Please try again.'));
+      setIsViewDirty(false);
       console.error(err);
     } finally {
       setLoading(false);
     }
   };
-  
-  const handleClearProgress = () => {
-    if (window.confirm("Are you sure you want to clear your progress and start a new test?")) {
-        localStorage.removeItem(storageKey);
-        fetchCases();
-    }
-  };
 
   useEffect(() => {
     fetchCases();
+
+    return () => {
+        setIsViewDirty(false); // Cleanup on unmount
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageKey]);
+  }, [sectionName, subjectName, JSON.stringify(chapters)]);
 
   const handleTextChange = (key: string, text: string) => {
     setAnswers(prev => ({...prev, [key]: { ...prev[key], text }}));
@@ -90,6 +81,7 @@ const CaseBasedView: React.FC<CaseBasedViewProps> = ({ sectionName, subjectName,
   };
 
   const handleFinishTest = () => {
+    setIsViewDirty(false);
     setIsTestFinished(true);
     setIsAnalyzing(true);
     setAnalysisReport('');
@@ -107,7 +99,7 @@ const CaseBasedView: React.FC<CaseBasedViewProps> = ({ sectionName, subjectName,
             if (reportJson && reportJson.final_score_report) {
                 const score = reportJson.final_score_report.score;
                 setFinalScore(score);
-                saveScore({
+                onSaveScore({
                     testCategory: `Case-Based Practice: ${subjectName}`,
                     score: score,
                     totalMarks: 20
@@ -115,7 +107,6 @@ const CaseBasedView: React.FC<CaseBasedViewProps> = ({ sectionName, subjectName,
             } else {
                 console.error("Could not find or parse the final score report in the AI's response.");
             }
-            localStorage.removeItem(storageKey);
         },
         (errorMsg) => {
             setAnalysisReport(prev => `${prev}\n\n**Error during analysis:** ${errorMsg}`);
@@ -125,7 +116,7 @@ const CaseBasedView: React.FC<CaseBasedViewProps> = ({ sectionName, subjectName,
   };
   
   const totalQuestions = cases.reduce((acc, caseStudy) => acc + (caseStudy.questions?.length || 0), 0);
-  // Fix: Explicitly type `a` as `SubjectiveAnswer` to resolve TypeScript error.
+  // Fix: Explicitly type parameter in `filter` to avoid potential TypeScript inference issues.
   const answeredQuestions = Object.values(answers).filter((a: SubjectiveAnswer) => a.text?.trim() || a.image).length;
   const allAnswered = cases.length > 0 && answeredQuestions === totalQuestions;
 
@@ -133,7 +124,6 @@ const CaseBasedView: React.FC<CaseBasedViewProps> = ({ sectionName, subjectName,
   if (loading && cases.length === 0 && !error) {
       return (
           <div className="p-4 sm:p-6 lg:p-8">
-              <BackButton onClick={goBack} />
               <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">Case-Based Practice: {subjectName}</h2>
               <SkeletonLoader type="card" count={4} />
           </div>
@@ -142,17 +132,16 @@ const CaseBasedView: React.FC<CaseBasedViewProps> = ({ sectionName, subjectName,
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      <div className="flex justify-between items-center">
-        <BackButton onClick={goBack} />
+      <div className="flex justify-end items-center mb-4">
         <button
-            onClick={handleClearProgress}
+            onClick={fetchCases}
             className="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 border border-transparent rounded-md hover:bg-red-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-red-500 transition-colors"
         >
             Start New Test
         </button>
       </div>
 
-      <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-4 mb-2">Case-Based Practice: {subjectName}</h2>
+      <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">Case-Based Practice: {subjectName}</h2>
        
       {error && <ErrorMessage title="Failed to Load Questions" message={error} />}
       

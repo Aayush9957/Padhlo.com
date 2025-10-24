@@ -1,17 +1,15 @@
 
+
 import React from 'react';
 import { View } from '../types';
-import BackButton from './BackButton';
 
 interface AboutViewProps {
   setView: (view: View) => void;
-  goBack: () => void;
 }
 
-const AboutView: React.FC<AboutViewProps> = ({ setView, goBack }) => {
+const AboutView: React.FC<AboutViewProps> = ({ setView }) => {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      <BackButton onClick={goBack} />
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 sm:p-8">
         <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-4">About Padhlo.com</h2>
         

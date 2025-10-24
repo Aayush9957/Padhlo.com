@@ -1,23 +1,29 @@
 
+
+
 import React from 'react';
-import { Section, View } from '../types';
+import { Section, View, User } from '../types';
 
 interface HomeProps {
   sections: Section[];
   setView: (view: View) => void;
+  user: User;
 }
 
-const Home: React.FC<HomeProps> = ({ sections, setView }) => {
+const Home: React.FC<HomeProps> = ({ sections, setView, user }) => {
   const handleKeyDown = (e: React.KeyboardEvent, action: () => void) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       action();
     }
   };
+  
+  const welcomeName = user.type === 'local' ? user.name.split(' ')[0] : 'Guest';
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-6">Choose Your Section</h2>
+      <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">Welcome, {welcomeName}!</h2>
+      <p className="text-slate-600 dark:text-slate-400 mb-6">Choose Your Section to get started.</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {sections.map((section) => (
           <div

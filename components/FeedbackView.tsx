@@ -1,7 +1,7 @@
 
+
 import React, { useState } from 'react';
 import { View } from '../types';
-import BackButton from './BackButton';
 
 // Define a type for feedback entries
 interface FeedbackEntry {
@@ -11,7 +11,7 @@ interface FeedbackEntry {
 
 const FEEDBACK_STORAGE_KEY = 'padhlo-feedback';
 
-const FeedbackView: React.FC<{ setView: (view: View) => void; goBack: () => void; }> = ({ setView, goBack }) => {
+const FeedbackView: React.FC<{ setView: (view: View) => void; }> = ({ setView }) => {
     const [feedback, setFeedback] = useState('');
     const [submitted, setSubmitted] = useState(false);
 
@@ -44,8 +44,7 @@ const FeedbackView: React.FC<{ setView: (view: View) => void; goBack: () => void
 
     return (
         <div className="p-4 sm:p-6 lg:p-8">
-            <BackButton onClick={goBack} />
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 sm:p-8 mt-4">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 sm:p-8">
                 <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-4">Feedback & Suggestions</h2>
                 
                 {submitted ? (

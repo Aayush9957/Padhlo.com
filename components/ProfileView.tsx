@@ -1,10 +1,6 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
-import { View, UserProfile } from '../types';
-import BackButton from './BackButton';
-
-const PROFILE_STORAGE_KEY = 'padhlo-user-profile';
+import { View, UserProfile, User } from '../types';
 
 // Helper function for robust validation of imported profile data
 const validateProfileData = (data: any): string | null => {
@@ -12,26 +8,23 @@ const validateProfileData = (data: any): string | null => {
         return "Invalid file format. Expected a JSON object.";
     }
 
-    // Check for required fields
-    const requiredFields: (keyof UserProfile)[] = ['name', 'standard', 'exams'];
-    for (const field of requiredFields) {
-        if (!(field in data)) {
-            return `Missing required field: '${field}'.`;
-        }
+    const hasDisplayName = 'displayName' in data;
+    const hasName = 'name' in data;
+
+    if (!hasDisplayName && !hasName) return "Missing required field: 'displayName'.";
+    if (!('standard' in data)) return "Missing required field: 'standard'.";
+    if (!('exams' in data)) return "Missing required field: 'exams'.";
+
+    const nameValue = hasDisplayName ? data.displayName : data.name;
+    if (typeof nameValue !== 'string') {
+        return "Invalid 'displayName' field. It must be a string.";
     }
 
-    // Validate 'name' type
-    if (typeof data.name !== 'string') {
-        return "Invalid 'name' field. It must be a string.";
-    }
-
-    // Validate 'standard' type and value
     const validStandards = ['Class 11', 'Class 12', ''];
     if (typeof data.standard !== 'string' || !validStandards.includes(data.standard)) {
         return `'standard' field must be one of 'Class 11', 'Class 12', or empty.`;
     }
 
-    // Validate 'exams' type and content
     if (!Array.isArray(data.exams)) {
         return "'exams' field must be an array.";
     }
@@ -40,7 +33,6 @@ const validateProfileData = (data: any): string | null => {
         return `All items in the 'exams' array must be either 'NEET' or 'JEE'.`;
     }
     
-    // Validate optional 'profilePicture'
     if (data.profilePicture && typeof data.profilePicture !== 'string') {
         return "If 'profilePicture' exists, it must be a string.";
     }
@@ -49,16 +41,18 @@ const validateProfileData = (data: any): string | null => {
 };
 
 
-const ProfileView: React.FC<{ setView: (view: View) => void; goBack: () => void; }> = ({ setView, goBack }) => {
-    const [profile, setProfile] = useState<UserProfile>({
-        name: '',
-        standard: '',
-        exams: [],
-        profilePicture: '',
-    });
+interface ProfileViewProps {
+    setView: (view: View) => void;
+    user: User;
+    profile: UserProfile;
+    onSaveProfile: (profile: UserProfile) => void;
+    setIsViewDirty: (isDirty: boolean) => void;
+}
+
+const ProfileView: React.FC<ProfileViewProps> = ({ setView, user, profile: initialProfile, onSaveProfile, setIsViewDirty }) => {
+    const [profile, setProfile] = useState<UserProfile>(initialProfile);
     const [savedMessageVisible, setSavedMessageVisible] = useState(false);
     
-    // State and refs for camera modal
     const [isCameraOpen, setIsCameraOpen] = useState(false);
     const [modalTrigger, setModalTrigger] = useState<HTMLButtonElement | null>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -66,20 +60,22 @@ const ProfileView: React.FC<{ setView: (view: View) => void; goBack: () => void;
     const captureButtonRef = useRef<HTMLButtonElement>(null);
     const importFileRef = useRef<HTMLInputElement>(null);
 
-
     useEffect(() => {
-        try {
-            const savedProfileRaw = localStorage.getItem(PROFILE_STORAGE_KEY);
-            if (savedProfileRaw) {
-                const savedProfile = JSON.parse(savedProfileRaw);
-                setProfile(savedProfile);
-            }
-        } catch (error) {
-            console.error("Failed to load user profile from storage", error);
-        }
-    }, []);
+        setProfile(initialProfile);
+    }, [initialProfile]);
     
-    // Accessibility: Handle keyboard events and focus for modal
+    useEffect(() => {
+        // Set dirty state if profile has changed from initial
+        const isDirty = JSON.stringify(profile) !== JSON.stringify(initialProfile);
+        setIsViewDirty(isDirty);
+
+        // Cleanup on unmount
+        return () => {
+            setIsViewDirty(false);
+        };
+    }, [profile, initialProfile, setIsViewDirty]);
+
+
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') {
@@ -125,14 +121,9 @@ const ProfileView: React.FC<{ setView: (view: View) => void; goBack: () => void;
 
     const handleSave = (e: React.FormEvent) => {
         e.preventDefault();
-        try {
-            localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
-            setSavedMessageVisible(true);
-            setTimeout(() => setSavedMessageVisible(false), 3000); // Hide message after 3 seconds
-        } catch (error) {
-            console.error("Failed to save user profile to storage", error);
-            alert("Could not save profile. Please try again.");
-        }
+        onSaveProfile(profile);
+        setSavedMessageVisible(true);
+        setTimeout(() => setSavedMessageVisible(false), 3000);
     };
     
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -184,11 +175,7 @@ const ProfileView: React.FC<{ setView: (view: View) => void; goBack: () => void;
 
     const handleExport = () => {
         try {
-            const profileData = localStorage.getItem(PROFILE_STORAGE_KEY);
-            if (!profileData) {
-                alert("No profile data to export. Please save a profile first.");
-                return;
-            }
+            const profileData = JSON.stringify(profile);
             const blob = new Blob([profileData], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -219,31 +206,26 @@ const ProfileView: React.FC<{ setView: (view: View) => void; goBack: () => void;
                 if (!text) throw new Error("File is empty.");
                 const importedProfile = JSON.parse(text);
                 
-                // Use the new validation function
                 const validationError = validateProfileData(importedProfile);
                 if (validationError) {
                     throw new Error(validationError);
                 }
 
-                // Ensure only known properties are set to avoid extra data
                 const sanitizedProfile: UserProfile = {
-                    name: importedProfile.name,
+                    displayName: importedProfile.displayName || importedProfile.name,
                     standard: importedProfile.standard,
                     exams: importedProfile.exams,
                     profilePicture: importedProfile.profilePicture || undefined,
                 };
 
                 setProfile(sanitizedProfile);
-                localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(sanitizedProfile));
+                onSaveProfile(sanitizedProfile);
                 alert("Profile imported successfully!");
             } catch (error) {
                 console.error("Error importing profile:", error);
                 alert(`Failed to import profile. Error: ${(error as Error).message}`);
             } finally {
-                // Reset the file input so the same file can be selected again
-                if (e.target) {
-                    e.target.value = '';
-                }
+                if (e.target) e.target.value = '';
             }
         };
         reader.readAsText(file);
@@ -252,11 +234,21 @@ const ProfileView: React.FC<{ setView: (view: View) => void; goBack: () => void;
 
     return (
         <div className="p-4 sm:p-6 lg:p-8">
-            <BackButton onClick={goBack} />
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 sm:p-8 mt-4">
-                <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-6">User Profile</h2>
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 sm:p-8">
+                <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-6">Account Details</h2>
                 
-                {/* Profile Picture Section */}
+                 {user.type === 'local' && (
+                    <div className="mb-8 p-4 bg-slate-100 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <h3 className="text-lg font-semibold text-slate-700 dark:text-slate-200">Account Information</h3>
+                        <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                            <strong>Name:</strong> {user.name}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                            <strong>Email:</strong> {user.email}
+                        </p>
+                    </div>
+                )}
+                
                 <div className="flex flex-col items-center mb-8">
                     <div className="w-32 h-32 rounded-full bg-slate-200 dark:bg-slate-700 mb-4 overflow-hidden flex items-center justify-center">
                         {profile.profilePicture ? (
@@ -279,23 +271,21 @@ const ProfileView: React.FC<{ setView: (view: View) => void; goBack: () => void;
                 </div>
 
                 <form onSubmit={handleSave} className="space-y-6">
-                    {/* Name Input */}
                     <div>
-                        <label htmlFor="name" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                            Your Name
+                        <label htmlFor="displayName" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Display Name
                         </label>
                         <input
                             type="text"
-                            id="name"
-                            name="name"
-                            value={profile.name}
+                            id="displayName"
+                            name="displayName"
+                            value={profile.displayName}
                             onChange={handleInputChange}
-                            placeholder="Enter your name"
+                            placeholder="Enter your display name"
                             className="mt-1 block w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm placeholder-slate-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                         />
                     </div>
 
-                    {/* Class Selection */}
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                             Your Class
@@ -317,7 +307,6 @@ const ProfileView: React.FC<{ setView: (view: View) => void; goBack: () => void;
                         </div>
                     </div>
 
-                    {/* Exam Preferences */}
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                             Exam Preferences
@@ -338,7 +327,6 @@ const ProfileView: React.FC<{ setView: (view: View) => void; goBack: () => void;
                         </div>
                     </div>
 
-                    {/* Action Buttons */}
                     <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
                          <div className="flex items-center flex-wrap gap-4">
                             <button
@@ -373,7 +361,6 @@ const ProfileView: React.FC<{ setView: (view: View) => void; goBack: () => void;
                 </form>
             </div>
 
-            {/* Camera Modal */}
             {isCameraOpen && (
                 <div 
                     className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50"

@@ -1,15 +1,14 @@
 
+
 import React from 'react';
 import { Section, View } from '../types';
-import BackButton from './BackButton';
 
 interface SectionViewProps {
   section: Section;
   setView: (view: View) => void;
-  goBack: () => void;
 }
 
-const SectionView: React.FC<SectionViewProps> = ({ section, setView, goBack }) => {
+const SectionView: React.FC<SectionViewProps> = ({ section, setView }) => {
   const handleKeyDown = (e: React.KeyboardEvent, action: () => void) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -19,7 +18,6 @@ const SectionView: React.FC<SectionViewProps> = ({ section, setView, goBack }) =
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      <BackButton onClick={goBack} />
       <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">{section.name}</h2>
       <p className="text-slate-600 dark:text-slate-400 mb-6">Select a subject to view chapters.</p>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

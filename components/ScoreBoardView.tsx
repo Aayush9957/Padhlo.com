@@ -1,48 +1,29 @@
 
-import React, { useState, useEffect } from 'react';
+
+
+
+
+
+import React from 'react';
 import { ScoreRecord, View } from '../types';
-import BackButton from './BackButton';
-
-// Score storage logic
-const STORAGE_KEY = 'padhlo-scoreboard';
-
-const getScores = (): ScoreRecord[] => {
-    try {
-        const scoresRaw = localStorage.getItem(STORAGE_KEY);
-        return scoresRaw ? JSON.parse(scoresRaw) : [];
-    } catch (e) {
-        console.error("Failed to parse scores", e);
-        return [];
-    }
-};
-
-const clearScores = () => {
-    localStorage.removeItem(STORAGE_KEY);
-};
 
 interface ScoreBoardViewProps {
     setView: (view: View) => void;
-    goBack: () => void;
+    scores: ScoreRecord[];
+    onClearScores: () => void;
 }
 
-const ScoreBoardView: React.FC<ScoreBoardViewProps> = ({ setView, goBack }) => {
-    const [scores, setScores] = useState<ScoreRecord[]>([]);
-
-    useEffect(() => {
-        setScores(getScores());
-    }, []);
+const ScoreBoardView: React.FC<ScoreBoardViewProps> = ({ setView, scores, onClearScores }) => {
 
     const handleClearHistory = () => {
         if (window.confirm("Are you sure you want to clear your entire test history? This action cannot be undone.")) {
-            clearScores();
-            setScores([]);
+            onClearScores();
         }
     };
 
     return (
         <div className="p-4 sm:p-6 lg:p-8">
-            <div className="flex justify-between items-center">
-                 <BackButton onClick={goBack} />
+            <div className="flex justify-end items-center mb-4">
                 {scores.length > 0 && (
                     <button
                         onClick={handleClearHistory}
@@ -52,7 +33,7 @@ const ScoreBoardView: React.FC<ScoreBoardViewProps> = ({ setView, goBack }) => {
                     </button>
                 )}
             </div>
-            <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mt-4 mb-6">Score Board</h2>
+            <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-6">Score Board</h2>
             
             {scores.length === 0 ? (
                 <div className="text-center py-10 bg-white dark:bg-slate-800 rounded-lg shadow">

@@ -1,12 +1,20 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, Chat } from "@google/genai";
 import { View } from '../types';
 import Spinner from './Spinner';
-import BackButton from './BackButton';
 import LoadingView from './LoadingView';
 import ErrorMessage from './ErrorMessage';
+
+// Fix: Added global declaration for `window.marked` to satisfy TypeScript,
+// as it is used for parsing Markdown content from the AI tutor.
+declare global {
+  interface Window {
+    marked: {
+      parse(markdown: string): string;
+    };
+  }
+}
 
 interface Message {
     role: 'user' | 'model';
@@ -18,10 +26,10 @@ interface TutorViewProps {
   sectionName: string;
   subjectName: string;
   setView: (view: View) => void;
-  goBack: () => void;
+  setIsViewDirty: (isDirty: boolean) => void;
 }
 
-const TutorView: React.FC<TutorViewProps> = ({ sectionName, subjectName, setView, goBack }) => {
+const TutorView: React.FC<TutorViewProps> = ({ sectionName, subjectName, setView, setIsViewDirty }) => {
   const [chat, setChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [userInput, setUserInput] = useState('');
@@ -62,14 +70,24 @@ const TutorView: React.FC<TutorViewProps> = ({ sectionName, subjectName, setView
     };
     
     initializeChat();
-  }, [sectionName, subjectName]);
+
+    return () => {
+        setIsViewDirty(false); // Cleanup on unmount
+    };
+  }, [sectionName, subjectName, setIsViewDirty]);
 
   useEffect(() => {
     // Scroll to the bottom of the chat container when new messages are added
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
-  }, [messages, isStreaming]);
+    
+    // A conversation is "dirty" if it has started (more than the initial message)
+    if (messages.length > 1) {
+        setIsViewDirty(true);
+    }
+
+  }, [messages, isStreaming, setIsViewDirty]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,7 +128,6 @@ const TutorView: React.FC<TutorViewProps> = ({ sectionName, subjectName, setView
     return (
         <div className="p-4 sm:p-6 lg:p-8 h-[calc(100vh-80px)] flex flex-col">
             <div className="flex-shrink-0">
-                <BackButton onClick={goBack} />
                 <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">AI Tutor: {subjectName}</h2>
                 <p className="text-slate-600 dark:text-slate-400 mb-4">Your personal study assistant.</p>
             </div>
@@ -124,7 +141,6 @@ const TutorView: React.FC<TutorViewProps> = ({ sectionName, subjectName, setView
   return (
     <div className="p-4 sm:p-6 lg:p-8 h-[calc(100vh-80px)] flex flex-col">
       <div className="flex-shrink-0">
-        <BackButton onClick={goBack} />
         <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">AI Tutor: {subjectName}</h2>
         <p className="text-slate-600 dark:text-slate-400 mb-4">Your personal study assistant.</p>
       </div>

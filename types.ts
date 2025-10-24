@@ -1,5 +1,9 @@
 
 
+
+
+
+
 export interface Chapter {
   name: string;
 }
@@ -15,15 +19,34 @@ export interface Section {
   subjects: Subject[];
 }
 
-// Type for downloaded notes
-export interface DownloadedNote {
-  id: string; // e.g., 'Class 12-Physics-Electric Charges and Fields'
+// Fix: Redefined DownloadedItem as a discriminated union to support both notes and videos.
+// This resolves type errors across multiple components.
+
+// Base interface for all downloaded items
+interface DownloadedItemBase {
+  id: string;
   sectionName: string;
   subjectName: string;
   chapterName: string;
-  content: string;
   downloadedAt: string;
 }
+
+// Type for downloaded notes
+export interface DownloadedNote extends DownloadedItemBase {
+  type: 'note';
+  content: string; // markdown content
+}
+
+// Type for downloaded videos
+export interface DownloadedVideo extends DownloadedItemBase {
+  type: 'video';
+  content: string; // base64 content
+  videoMimeType: string;
+}
+
+// Union type for any downloaded item
+export type DownloadedItem = DownloadedNote | DownloadedVideo;
+
 
 // Type for Flashcards
 export interface Flashcard {
@@ -33,6 +56,11 @@ export interface Flashcard {
 
 export type View = 
   | { name: 'home' }
+  | { name: 'login' }
+  | { name: 'signIn' }
+  | { name: 'signUp' }
+  | { name: 'forgotPassword' }
+  | { name: 'resetPassword'; email: string }
   | { name: 'section'; sectionName: string }
   | { name: 'subject'; sectionName: string; subjectName: string }
   | { name: 'chapterList'; sectionName: string; subjectName: string }
@@ -44,11 +72,12 @@ export type View =
   | { name: 'tutor'; sectionName: string; subjectName: string }
   | { name: 'caseBased'; sectionName: string; subjectName: string; chapters: string[] }
   | { name: 'mcqs'; sectionName: string; subjectName: string; chapters: string[] }
+  | { name: 'flashcardChapterList'; sectionName: string; subjectName: string; }
   | { name: 'flashcards'; sectionName: string; subjectName: string; chapterName: string; }
   | { name: 'downloadedNotes' }
   | { name: 'scoreBoard' }
   | { name: 'about' }
-  | { name: 'profile' }
+  | { name: 'account' }
   | { name: 'feedback' };
 
 // Type for search results
@@ -106,7 +135,7 @@ export interface ScoreRecord {
 
 // Type for User Profile
 export interface UserProfile {
-  name: string;
+  displayName: string;
   standard: 'Class 11' | 'Class 12' | '';
   exams: ('NEET' | 'JEE')[];
   profilePicture?: string; // base64 encoded image
@@ -118,3 +147,27 @@ export interface SubjectiveAnswer {
   image?: File;
   imagePreview?: string;
 }
+
+// Type for subscription plan
+export type SubscriptionType = 'none' | 'test_only' | 'full';
+
+// Type for authenticated user
+export interface LocalUser {
+  type: 'local';
+  name: string;
+  email: string;
+  picture: string; // URL for generated avatar
+  password?: string; // Only used for storage, not in active state
+  // New fields for persistent data
+  sessionToken?: string;
+  profile: UserProfile;
+  subscription: SubscriptionType;
+  scoreboard: ScoreRecord[];
+  completion: { [key: string]: { completed: boolean; feedback?: any } };
+}
+
+export interface GuestUser {
+  type: 'guest';
+}
+
+export type User = LocalUser | GuestUser;

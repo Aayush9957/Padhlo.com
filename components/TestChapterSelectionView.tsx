@@ -1,17 +1,15 @@
 
 import React, { useState } from 'react';
 import { Subject, View } from '../types';
-import BackButton from './BackButton';
 
 interface TestChapterSelectionViewProps {
   sectionName: string;
   subject: Subject;
   testType: 'longAnswer' | 'caseBased' | 'mcqs';
   setView: (view: View) => void;
-  goBack: () => void;
 }
 
-const TestChapterSelectionView: React.FC<TestChapterSelectionViewProps> = ({ sectionName, subject, testType, setView, goBack }) => {
+const TestChapterSelectionView: React.FC<TestChapterSelectionViewProps> = ({ sectionName, subject, testType, setView }) => {
   const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
 
   const handleChapterToggle = (chapterName: string) => {
@@ -52,7 +50,6 @@ const TestChapterSelectionView: React.FC<TestChapterSelectionViewProps> = ({ sec
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      <BackButton onClick={goBack} />
       <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">{testTypeName}</h2>
       <p className="text-slate-600 dark:text-slate-400 mb-6">Select chapters for your practice session.</p>
       
