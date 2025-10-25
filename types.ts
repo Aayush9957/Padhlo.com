@@ -1,16 +1,11 @@
-
-
-
-
-
-
 export interface Chapter {
   name: string;
 }
 
 export interface Subject {
-  name: string;
-  chapters: Chapter[];
+  name:string;
+  chapters?: Chapter[];
+  subSubjects?: Subject[];
 }
 
 export interface Section {
@@ -18,35 +13,6 @@ export interface Section {
   description: string;
   subjects: Subject[];
 }
-
-// Fix: Redefined DownloadedItem as a discriminated union to support both notes and videos.
-// This resolves type errors across multiple components.
-
-// Base interface for all downloaded items
-interface DownloadedItemBase {
-  id: string;
-  sectionName: string;
-  subjectName: string;
-  chapterName: string;
-  downloadedAt: string;
-}
-
-// Type for downloaded notes
-export interface DownloadedNote extends DownloadedItemBase {
-  type: 'note';
-  content: string; // markdown content
-}
-
-// Type for downloaded videos
-export interface DownloadedVideo extends DownloadedItemBase {
-  type: 'video';
-  content: string; // base64 content
-  videoMimeType: string;
-}
-
-// Union type for any downloaded item
-export type DownloadedItem = DownloadedNote | DownloadedVideo;
-
 
 // Type for Flashcards
 export interface Flashcard {
@@ -62,19 +28,18 @@ export type View =
   | { name: 'forgotPassword' }
   | { name: 'resetPassword'; email: string }
   | { name: 'section'; sectionName: string }
-  | { name: 'subject'; sectionName: string; subjectName: string }
-  | { name: 'chapterList'; sectionName: string; subjectName: string }
-  | { name: 'chapter'; sectionName: string; subjectName: string; chapterName: string; offlineContent?: string }
-  | { name: 'testSeries'; sectionName: string; subjectName: string }
-  | { name: 'testChapterSelection'; sectionName: string; subjectName: string; testType: 'longAnswer' | 'caseBased' | 'mcqs' }
-  | { name: 'longAnswer'; sectionName: string; subjectName: string; chapters: string[] }
-  | { name: 'mockTest'; sectionName: string; subjectName: string }
-  | { name: 'tutor'; sectionName: string; subjectName: string }
-  | { name: 'caseBased'; sectionName: string; subjectName: string; chapters: string[] }
-  | { name: 'mcqs'; sectionName: string; subjectName: string; chapters: string[] }
-  | { name: 'flashcardChapterList'; sectionName: string; subjectName: string; }
-  | { name: 'flashcards'; sectionName: string; subjectName: string; chapterName: string; }
-  | { name: 'downloadedNotes' }
+  | { name: 'subject'; sectionName: string; subjectName: string; parentSubjectName?: string }
+  | { name: 'chapterList'; sectionName: string; subjectName: string; parentSubjectName?: string }
+  | { name: 'chapter'; sectionName: string; subjectName: string; chapterName: string; offlineContent?: string; parentSubjectName?: string }
+  | { name: 'testSeries'; sectionName: string; subjectName: string; parentSubjectName?: string }
+  | { name: 'testChapterSelection'; sectionName: string; subjectName: string; testType: 'longAnswer' | 'caseBased' | 'mcqs'; parentSubjectName?: string }
+  | { name: 'longAnswer'; sectionName: string; subjectName: string; chapters: string[]; parentSubjectName?: string }
+  | { name: 'mockTest'; sectionName: string; subjectName: string; parentSubjectName?: string }
+  | { name: 'tutor'; sectionName: string; subjectName: string; parentSubjectName?: string }
+  | { name: 'caseBased'; sectionName: string; subjectName: string; chapters: string[]; parentSubjectName?: string }
+  | { name: 'mcqs'; sectionName: string; subjectName: string; chapters: string[]; parentSubjectName?: string }
+  | { name: 'flashcardChapterList'; sectionName: string; subjectName: string; parentSubjectName?: string }
+  | { name: 'flashcards'; sectionName: string; subjectName: string; chapterName: string; parentSubjectName?: string }
   | { name: 'scoreBoard' }
   | { name: 'about' }
   | { name: 'account' }
@@ -85,6 +50,7 @@ export interface SearchResult {
   sectionName: string;
   subjectName: string;
   chapterName: string;
+  parentSubjectName?: string;
 }
 
 // Types for AI-generated test content
@@ -136,7 +102,6 @@ export interface ScoreRecord {
 // Type for User Profile
 export interface UserProfile {
   displayName: string;
-  standard: 'Class 11' | 'Class 12' | '';
   exams: ('NEET' | 'JEE')[];
   profilePicture?: string; // base64 encoded image
 }
@@ -148,8 +113,25 @@ export interface SubjectiveAnswer {
   imagePreview?: string;
 }
 
+// Fix: Add missing DownloadedItem interface for offline content.
+// Type for downloaded offline content
+export interface DownloadedItem {
+  id: string;
+  type: 'note'; // Currently only notes are downloadable, can be expanded.
+  sectionName: string;
+  subjectName: string;
+  chapterName: string;
+  content: string; // The markdown content of the note.
+  downloadedAt: string; // ISO string date.
+}
+
 // Type for subscription plan
 export type SubscriptionType = 'none' | 'test_only' | 'full';
+
+// Type for tracking chapter progress
+export interface ChapterProgress {
+  scrollPercentage: number;
+}
 
 // Type for authenticated user
 export interface LocalUser {
@@ -164,6 +146,7 @@ export interface LocalUser {
   subscription: SubscriptionType;
   scoreboard: ScoreRecord[];
   completion: { [key: string]: { completed: boolean; feedback?: any } };
+  progress?: { [key: string]: ChapterProgress };
 }
 
 export interface GuestUser {
@@ -171,3 +154,28 @@ export interface GuestUser {
 }
 
 export type User = LocalUser | GuestUser;
+
+// Type for toast notifications
+export type ToastType = 'success' | 'error' | 'info';
+
+export interface Toast {
+  id: number;
+  message: string;
+  type: ToastType;
+}
+
+
+// Centralized global type definitions for window object
+declare global {
+  interface Window {
+    marked: {
+      parse(markdown: string): string;
+    };
+    mermaid: {
+      run(): void;
+    };
+    jspdf: any;
+    html2canvas: any;
+    renderMathInElement: (element: HTMLElement, options?: any) => void;
+  }
+}

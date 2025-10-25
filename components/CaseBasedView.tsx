@@ -1,19 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { generateCaseBasedQuestions, analyzeSubjectiveTestStream, getApiErrorMessage } from '../services/geminiService';
+// Fix: Updated imports to use exported modules from geminiService.
+import { TestGenerator, AnswerAnalyzer, getApiErrorMessage } from '../services/geminiService';
 import { View, CaseStudy, ScoreRecord, SubjectiveAnswer } from '../types';
 import Spinner from './Spinner';
 import SkeletonLoader from './SkeletonLoader';
 import ErrorMessage from './ErrorMessage';
 import { extractFinalJson } from '../testUtils';
-
-declare global {
-  interface Window {
-    marked: {
-      parse(markdown: string): string;
-    };
-  }
-}
+import MarkdownContent from './MarkdownContent';
 
 interface CaseBasedViewProps {
   sectionName: string;
@@ -40,7 +34,8 @@ const CaseBasedView: React.FC<CaseBasedViewProps> = ({ sectionName, subjectName,
     setLoading(true);
     setError(null);
     try {
-      const generated = await generateCaseBasedQuestions(sectionName, subjectName, chapters, 4);
+      // Fix: Prefixed with the exported TestGenerator module.
+      const generated = await TestGenerator.generateCaseBasedQuestions(sectionName, subjectName, chapters, 4);
       const newCases = JSON.parse(generated);
       setCases(newCases);
       setAnswers({});
@@ -87,7 +82,8 @@ const CaseBasedView: React.FC<CaseBasedViewProps> = ({ sectionName, subjectName,
     setAnalysisReport('');
     let fullReport = '';
 
-    analyzeSubjectiveTestStream(
+    // Fix: Prefixed with the exported AnswerAnalyzer module.
+    AnswerAnalyzer.analyzeSubjectiveTestStream(
         'Case-Based', 20, 5, cases, answers,
         (chunk) => {
             fullReport += chunk;
@@ -150,7 +146,7 @@ const CaseBasedView: React.FC<CaseBasedViewProps> = ({ sectionName, subjectName,
             {cases.map((caseStudy, caseIndex) => (
             <div key={caseIndex} className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-md">
                 <h3 className="font-bold text-xl text-slate-800 dark:text-slate-200 mb-2">Case Study {caseIndex + 1}</h3>
-                <article className="text-slate-600 dark:text-slate-300 mb-6 prose dark:prose-invert max-w-none" dangerouslySetInnerHTML={{__html: window.marked.parse(caseStudy.case)}} />
+                <MarkdownContent content={caseStudy.case} className="text-slate-600 dark:text-slate-300 mb-6 prose dark:prose-invert max-w-none" />
                 <div className="space-y-6 border-t border-slate-200 dark:border-slate-700 pt-6">
                     {caseStudy.questions?.map((q, qIndex) => {
                         const key = `${caseIndex}-${qIndex}`;
@@ -215,10 +211,7 @@ const CaseBasedView: React.FC<CaseBasedViewProps> = ({ sectionName, subjectName,
             <div className="p-6 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
                 <h4 className="font-bold text-slate-800 dark:text-slate-200 text-lg">Performance Analysis</h4>
                 {isAnalyzing && !analysisReport && <Spinner />}
-                <article 
-                    className="mt-2 text-slate-700 dark:text-slate-300 prose dark:prose-invert max-w-none"
-                    dangerouslySetInnerHTML={{ __html: window.marked.parse(analysisReport) }}
-                />
+                <MarkdownContent content={analysisReport} className="mt-2 text-slate-700 dark:text-slate-300 prose dark:prose-invert max-w-none" />
             </div>
         </div>
       )}

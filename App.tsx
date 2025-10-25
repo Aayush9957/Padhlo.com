@@ -1,13 +1,15 @@
 
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense, useRef } from 'react';
 import Header from './components/Header';
 import SplashScreen from './components/SplashScreen'; // This should not be lazy-loaded
 import LoadingView from './components/LoadingView'; // Used for Suspense fallback
 import { STUDY_SECTIONS } from './components/constants';
-import { View, SearchResult, User, LocalUser, GuestUser, SubscriptionType, UserProfile, ScoreRecord } from './types';
+import { View, SearchResult, User, LocalUser, GuestUser, SubscriptionType, UserProfile, ScoreRecord, Subject, ChapterProgress, Toast, ToastType } from './types';
 import SettingsView from './components/SettingsView';
 import SubscriptionModal from './components/SubscriptionModal';
 import LoginRequiredModal from './components/LoginRequiredModal';
+import ErrorBoundary from './components/ErrorBoundary';
+import ToastContainer from './components/ToastContainer';
 
 
 // --- Lazy-loaded View Components ---
@@ -29,7 +31,6 @@ const TutorView = lazy(() => import('./components/TutorView'));
 const CaseBasedView = lazy(() => import('./components/CaseBasedView'));
 const MCQsView = lazy(() => import('./components/MCQsView'));
 const FlashcardView = lazy(() => import('./components/FlashcardView'));
-const DownloadsView = lazy(() => import('./components/DownloadsView'));
 const ScoreBoardView = lazy(() => import('./components/ScoreBoardView'));
 const AboutView = lazy(() => import('./components/AboutView'));
 const ProfileView = lazy(() => import('./components/ProfileView'));
@@ -53,6 +54,14 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>({ name: 'home' });
   const [isViewDirty, setIsViewDirty] = useState(false);
 
+  // Refs to hold the latest state for the popstate handler, preventing stale closures.
+  const isViewDirtyRef = useRef(isViewDirty);
+  isViewDirtyRef.current = isViewDirty;
+  
+  const currentViewRef = useRef(currentView);
+  currentViewRef.current = currentView;
+
+
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -70,13 +79,18 @@ const App: React.FC = () => {
   // Password Reset State
   const [otpState, setOtpState] = useState<{ email: string; otp: string; timestamp: number } | null>(null);
 
+  // Toast Notification State
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastIdCounter = useRef(0);
+
+
   // --- History API Integration ---
   useEffect(() => {
     const handlePopState = (event: PopStateEvent) => {
-      if (isViewDirty) {
+      if (isViewDirtyRef.current) {
         if (!window.confirm("You have unsaved changes. Are you sure you want to leave? This action cannot be undone.")) {
           // User cancelled, so push the state back to where it was
-          window.history.pushState(currentView, '');
+          window.history.pushState(currentViewRef.current, '');
           return;
         }
       }
@@ -87,12 +101,12 @@ const App: React.FC = () => {
       }
     };
     window.addEventListener('popstate', handlePopState);
-    // On initial load, replace the history state
-    window.history.replaceState(currentView, '');
+    
+    // This effect should only run once on mount to set up the listener.
     return () => {
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [isViewDirty, currentView]);
+  }, []); // Run only on mount
   
     // Add beforeunload listener to prevent accidental tab close/reload
   useEffect(() => {
@@ -199,6 +213,22 @@ const App: React.FC = () => {
     window.history.back();
   };
 
+  // --- Notification System ---
+  const addToast = (message: string, type: ToastType = 'info') => {
+    const id = toastIdCounter.current++;
+    setToasts(prevToasts => [...prevToasts, { id, message, type }]);
+
+    // Auto-remove toast after a delay
+    setTimeout(() => {
+      setToasts(prevToasts => prevToasts.filter(toast => toast.id !== id));
+    }, 5000);
+  };
+
+  const removeToast = (id: number) => {
+    setToasts(prevToasts => prevToasts.filter(toast => toast.id !== id));
+  };
+
+
   // --- Data Persistence ---
   const updateAndPersistUser = (updatedUser: LocalUser) => {
     setUser(updatedUser);
@@ -232,10 +262,11 @@ const App: React.FC = () => {
             type: 'local', name, email, password: pass,
             picture: `https://api.dicebear.com/8.x/initials/svg?seed=${encodeURIComponent(name)}`,
             sessionToken,
-            profile: { displayName: name, standard: '', exams: [] },
+            profile: { displayName: name, exams: [] },
             subscription: 'none',
             scoreboard: [],
             completion: {},
+            progress: {},
         };
         accounts.push(newUserAccount);
         localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts));
@@ -402,7 +433,7 @@ const App: React.FC = () => {
     if (user?.type !== 'local') return;
 
     const canAccessTestSeries = user.subscription === 'test_only' || user.subscription === 'full';
-    const canAccessTutor = user.subscription === 'full';
+    const canAccessFull = user.subscription === 'full';
 
     let hasPermission = false;
     switch (view.name) {
@@ -417,7 +448,8 @@ const App: React.FC = () => {
         case 'tutor':
         case 'flashcardChapterList':
         case 'flashcards':
-            hasPermission = canAccessTutor;
+        case 'chapter': // This case is now for the PDF download feature
+            hasPermission = canAccessFull;
             break;
     }
 
@@ -449,6 +481,7 @@ const App: React.FC = () => {
     if (user?.type !== 'local') return;
     const updatedUser = { ...user, profile };
     updateAndPersistUser(updatedUser);
+    addToast("Profile saved successfully!", 'success');
   };
 
   const handleSaveScore = (scoreData: Omit<ScoreRecord, 'id' | 'date'>) => {
@@ -466,6 +499,7 @@ const App: React.FC = () => {
     if (user?.type !== 'local') return;
     const updatedUser = { ...user, scoreboard: [] };
     updateAndPersistUser(updatedUser);
+    addToast("Score history cleared.", 'info');
   };
   
   const handleForgetUser = (email: string) => {
@@ -478,9 +512,10 @@ const App: React.FC = () => {
         if (user?.type === 'local' && user.email === email) {
             handleLogout();
         }
+        addToast("Account removed from this device.", 'info');
     } catch (e) {
         console.error("Failed to forget user", e);
-        alert("An error occurred while removing the account.");
+        addToast("An error occurred while removing the account.", 'error');
     }
   };
 
@@ -498,17 +533,49 @@ const App: React.FC = () => {
     updateAndPersistUser(updatedUser);
   };
 
+  const handleUpdateProgress = (chapterKey: string, scrollPercentage: number) => {
+    if (user?.type !== 'local') return;
+
+    const currentProgress = user.progress?.[chapterKey]?.scrollPercentage || 0;
+    // Only update if progress has increased to avoid saving smaller values on scroll up
+    if (scrollPercentage > currentProgress) {
+        const updatedProgress = {
+            ...user.progress,
+            [chapterKey]: { scrollPercentage }
+        };
+        const updatedUser = { ...user, progress: updatedProgress };
+        updateAndPersistUser(updatedUser);
+    }
+  };
 
   useEffect(() => {
     if (searchQuery.length > 1) {
       const results: SearchResult[] = [];
       STUDY_SECTIONS.forEach(section => {
         section.subjects.forEach(subject => {
-          subject.chapters.forEach(chapter => {
-            if (chapter.name.toLowerCase().includes(searchQuery.toLowerCase())) {
-              results.push({ sectionName: section.name, subjectName: subject.name, chapterName: chapter.name });
-            }
-          });
+          // Handle direct chapters
+          if (subject.chapters) {
+            subject.chapters.forEach(chapter => {
+              if (chapter.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+                results.push({ sectionName: section.name, subjectName: subject.name, chapterName: chapter.name });
+              }
+            });
+          }
+          // Handle nested sub-subject chapters
+          if (subject.subSubjects) {
+            subject.subSubjects.forEach(subSubject => {
+              subSubject.chapters?.forEach(chapter => {
+                if (chapter.name.toLowerCase().includes(searchQuery.toLowerCase())) {
+                  results.push({
+                    sectionName: section.name,
+                    parentSubjectName: subject.name,
+                    subjectName: subSubject.name,
+                    chapterName: chapter.name,
+                  });
+                }
+              });
+            });
+          }
         });
       });
       setSearchResults(results);
@@ -516,13 +583,25 @@ const App: React.FC = () => {
       setSearchResults([]);
     }
   }, [searchQuery]);
+  
+  const findSubject = (sectionName: string, subjectName: string, parentSubjectName?: string): Subject | undefined => {
+    const section = STUDY_SECTIONS.find(s => s.name === sectionName);
+    if (!section) return undefined;
+
+    if (parentSubjectName) {
+        const parent = section.subjects.find(s => s.name === parentSubjectName);
+        return parent?.subSubjects?.find(s => s.name === subjectName);
+    } else {
+        return section.subjects.find(s => s.name === subjectName);
+    }
+  };
 
   // --- Content Rendering ---
   const renderMainContent = () => {
     if (!user) return null;
     if (user.type === 'local') {
       // Logged-in user flow
-      const { subscription, scoreboard, completion, profile } = user;
+      const { subscription, scoreboard, completion, profile, progress } = user;
       const canAccessTestSeries = subscription === 'test_only' || subscription === 'full';
       const canAccessTutor = subscription === 'full';
       
@@ -533,22 +612,22 @@ const App: React.FC = () => {
           const section = STUDY_SECTIONS.find(s => s.name === currentView.sectionName);
           return section ? <SectionView section={section} setView={setView} /> : <p>Section not found</p>;
         }
-        case 'subject':
-          return <SubjectView {...currentView} setView={setView} canAccessTestSeries={canAccessTestSeries} canAccessTutor={canAccessTutor} onPremiumFeatureClick={handlePremiumFeatureClick} />;
+        case 'subject': {
+            const subject = findSubject(currentView.sectionName, currentView.subjectName, currentView.parentSubjectName);
+            return subject ? <SubjectView sectionName={currentView.sectionName} subject={subject} parentSubjectName={currentView.parentSubjectName} setView={setView} canAccessTestSeries={canAccessTestSeries} canAccessTutor={canAccessTutor} onPremiumFeatureClick={handlePremiumFeatureClick} /> : <p>Subject not found</p>;
+        }
         case 'chapterList': {
-          const section = STUDY_SECTIONS.find(s => s.name === currentView.sectionName);
-          const subject = section?.subjects.find(sub => sub.name === currentView.subjectName);
-          return subject ? <ChapterListView sectionName={section.name} subject={subject} setView={setView} completionStatus={completion} userProfile={profile} /> : <p>Chapters not found</p>;
+          const subject = findSubject(currentView.sectionName, currentView.subjectName, currentView.parentSubjectName);
+          return subject ? <ChapterListView sectionName={currentView.sectionName} subject={subject} setView={setView} completionStatus={completion} userProfile={profile} parentSubjectName={currentView.parentSubjectName} chapterProgress={progress} addToast={addToast} /> : <p>Chapters not found</p>;
         }
         case 'chapter': {
-          const completionKey = `completion-${currentView.sectionName}-${currentView.subjectName}-${currentView.chapterName}`;
-          return <ChapterView {...currentView} setView={setView} userProfile={profile} completionData={completion[completionKey]} onToggleCompletion={(newStatus) => handleToggleCompletion(completionKey, newStatus)} onFeedbackSubmit={(feedback) => handleFeedbackSubmit(completionKey, feedback)} />;
+          const completionKey = `completion-${currentView.sectionName}-${currentView.parentSubjectName || ''}-${currentView.subjectName}-${currentView.chapterName}`;
+          return <ChapterView {...currentView} setView={setView} userProfile={profile} completionData={completion[completionKey]} onToggleCompletion={(newStatus) => handleToggleCompletion(completionKey, newStatus)} onFeedbackSubmit={(feedback) => handleFeedbackSubmit(completionKey, feedback)} onUpdateProgress={handleUpdateProgress} subscription={subscription} onPremiumFeatureClick={handlePremiumFeatureClick} addToast={addToast} />;
         }
         case 'testSeries':
           return <TestSeriesView {...currentView} setView={setView} />;
         case 'testChapterSelection': {
-          const section = STUDY_SECTIONS.find(s => s.name === currentView.sectionName);
-          const subject = section?.subjects.find(sub => sub.name === currentView.subjectName);
+          const subject = findSubject(currentView.sectionName, currentView.subjectName, currentView.parentSubjectName);
           return subject ? <TestChapterSelectionView {...currentView} subject={subject} setView={setView} /> : <p>Subject not found</p>;
         }
         case 'longAnswer':
@@ -562,22 +641,19 @@ const App: React.FC = () => {
         case 'mcqs':
           return <MCQsView {...currentView} setView={setView} onSaveScore={handleSaveScore} setIsViewDirty={setIsViewDirty} />;
         case 'flashcardChapterList': {
-          const section = STUDY_SECTIONS.find(s => s.name === currentView.sectionName);
-          const subject = section?.subjects.find(sub => sub.name === currentView.subjectName);
-          return subject ? <ChapterListView sectionName={section.name} subject={subject} setView={setView} completionStatus={completion} destination="flashcards" userProfile={profile} /> : <p>Chapters not found</p>;
+          const subject = findSubject(currentView.sectionName, currentView.subjectName, currentView.parentSubjectName);
+          return subject ? <ChapterListView sectionName={currentView.sectionName} subject={subject} setView={setView} completionStatus={completion} destination="flashcards" userProfile={profile} parentSubjectName={currentView.parentSubjectName} chapterProgress={progress} addToast={addToast} /> : <p>Chapters not found</p>;
         }
         case 'flashcards':
           return <FlashcardView {...currentView} setView={setView} />;
-        case 'downloadedNotes':
-          return <DownloadsView setView={setView} />;
         case 'scoreBoard':
           return <ScoreBoardView setView={setView} scores={scoreboard} onClearScores={handleClearScores} />;
         case 'about':
           return <AboutView setView={setView} />;
         case 'account':
-          return <ProfileView setView={setView} user={user} profile={profile} onSaveProfile={handleSaveProfile} setIsViewDirty={setIsViewDirty} />;
+          return <ProfileView setView={setView} user={user} profile={profile} onSaveProfile={handleSaveProfile} setIsViewDirty={setIsViewDirty} addToast={addToast} />;
         case 'feedback':
-          return <FeedbackView setView={setView} />;
+          return <FeedbackView setView={setView} addToast={addToast} />;
         default:
           return <Home sections={STUDY_SECTIONS} setView={setView} user={user} />;
       }
@@ -586,13 +662,12 @@ const App: React.FC = () => {
       switch (currentView.name) {
         case 'home': return <Home sections={STUDY_SECTIONS} setView={setView} user={user} />;
         case 'section': { const s = STUDY_SECTIONS.find(s => s.name === currentView.sectionName); return s ? <SectionView section={s} setView={setView} /> : null; }
-        case 'subject': return <SubjectView {...currentView} setView={setView} canAccessTestSeries={false} canAccessTutor={false} onPremiumFeatureClick={handlePremiumFeatureClick} />;
-        case 'chapterList': { const s = STUDY_SECTIONS.find(s => s.name === currentView.sectionName); const sub = s?.subjects.find(sub => sub.name === currentView.subjectName); return sub ? <ChapterListView sectionName={s.name} subject={sub} setView={setView} completionStatus={{}} userProfile={null} /> : null; }
-        case 'chapter': return <ChapterView {...currentView} setView={setView} userProfile={null} completionData={null} onToggleCompletion={() => {}} onFeedbackSubmit={() => {}} />;
-        case 'downloadedNotes': return <DownloadsView setView={setView} />;
+        case 'subject': { const sub = findSubject(currentView.sectionName, currentView.subjectName, currentView.parentSubjectName); return sub ? <SubjectView sectionName={currentView.sectionName} subject={sub} parentSubjectName={currentView.parentSubjectName} setView={setView} canAccessTestSeries={false} canAccessTutor={false} onPremiumFeatureClick={handlePremiumFeatureClick} /> : null; }
+        case 'chapterList': { const sub = findSubject(currentView.sectionName, currentView.subjectName, currentView.parentSubjectName); return sub ? <ChapterListView sectionName={currentView.sectionName} subject={sub} setView={setView} completionStatus={{}} userProfile={null} parentSubjectName={currentView.parentSubjectName} chapterProgress={{}} addToast={addToast} /> : null; }
+        case 'chapter': return <ChapterView {...currentView} setView={setView} userProfile={null} completionData={null} onToggleCompletion={() => {}} onFeedbackSubmit={() => {}} onUpdateProgress={() => {}} subscription={'none'} onPremiumFeatureClick={handlePremiumFeatureClick} addToast={addToast} />;
         case 'about': return <AboutView setView={setView} />;
-        case 'account': return <ProfileView setView={setView} user={user} profile={{displayName: 'Guest', standard: '', exams: []}} onSaveProfile={() => {}} setIsViewDirty={setIsViewDirty} />;
-        case 'feedback': return <FeedbackView setView={setView} />;
+        case 'account': return <ProfileView setView={setView} user={user} profile={{displayName: 'Guest', exams: []}} onSaveProfile={() => {}} setIsViewDirty={setIsViewDirty} addToast={addToast} />;
+        case 'feedback': return <FeedbackView setView={setView} addToast={addToast} />;
         default: setView({name: 'home'}); return null;
       }
     }
@@ -636,6 +711,7 @@ const App: React.FC = () => {
   // Main App Screen
   return (
     <>
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
       <Header
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -648,9 +724,11 @@ const App: React.FC = () => {
         user={user}
       />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <Suspense fallback={<LoadingView />}>
-          {renderMainContent()}
-        </Suspense>
+        <ErrorBoundary>
+          <Suspense fallback={<LoadingView />}>
+            {renderMainContent()}
+          </Suspense>
+        </ErrorBoundary>
       </main>
       <SettingsView
         isOpen={isSettingsOpen}

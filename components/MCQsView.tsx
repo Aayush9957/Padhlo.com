@@ -1,18 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
-import { generateMCQs, analyzeMCQPerformanceStream, getApiErrorMessage } from '../services/geminiService';
+// Fix: Updated imports to use exported modules from geminiService.
+import { TestGenerator, AnswerAnalyzer, getApiErrorMessage } from '../services/geminiService';
 import { View, MCQ, ScoreRecord } from '../types';
 import Spinner from './Spinner';
 import SkeletonLoader from './SkeletonLoader';
 import ErrorMessage from './ErrorMessage';
-
-declare global {
-    interface Window {
-        marked: {
-            parse(markdown: string): string;
-        };
-    }
-}
+import MarkdownContent from './MarkdownContent';
 
 interface MCQsViewProps {
   sectionName: string;
@@ -40,7 +34,8 @@ const MCQsView: React.FC<MCQsViewProps> = ({ sectionName, subjectName, chapters,
     setLoading(true);
     setError(null);
     try {
-      const generated = await generateMCQs(sectionName, subjectName, chapters, 10);
+      // Fix: Prefixed with the exported TestGenerator module.
+      const generated = await TestGenerator.generateMCQs(sectionName, subjectName, chapters, 10);
       setMcqs(JSON.parse(generated));
       setSelectedAnswers({});
       setSubmitted({});
@@ -101,7 +96,8 @@ const MCQsView: React.FC<MCQsViewProps> = ({ sectionName, subjectName, chapters,
 
         setIsAnalyzing(true);
         setAnalysisReport('');
-        analyzeMCQPerformanceStream(
+        // Fix: Prefixed with the exported AnswerAnalyzer module.
+        AnswerAnalyzer.analyzeMCQPerformanceStream(
             mcqs,
             selectedAnswers,
             (chunk) => setAnalysisReport(prev => prev + chunk),
@@ -238,10 +234,7 @@ const MCQsView: React.FC<MCQsViewProps> = ({ sectionName, subjectName, chapters,
              <div className="mt-6 p-6 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
                 <h4 className="font-bold text-slate-800 dark:text-slate-200 text-lg">Performance Analysis</h4>
                 {isAnalyzing && !analysisReport && <Spinner />}
-                <article 
-                    className="mt-2 text-slate-700 dark:text-slate-300 prose dark:prose-invert max-w-none"
-                    dangerouslySetInnerHTML={{ __html: window.marked.parse(analysisReport) }}
-                />
+                <MarkdownContent content={analysisReport} className="mt-2 text-slate-700 dark:text-slate-300 prose dark:prose-invert max-w-none" />
             </div>
         )}
         

@@ -13,6 +13,48 @@
       }
     </script>
     <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <!-- KaTeX for beautiful math rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0KOVEMmg9rtabNEKFZfls2itHNpBlA/GKCg+2a+s4KxBEzTRNd+zn" crossorigin="anonymous">
+    <style>
+      /* --- Custom KaTeX Styling for PDF-like Readability --- */
+      
+      /* General improvements for font rendering and inline alignment */
+      .katex {
+        /* Enables font-smoothing for crisper text on most displays. */
+        font-smoothing: antialiased;
+        -webkit-font-smoothing: antialiased;
+        /* Adjusts vertical alignment for smoother integration with surrounding text. */
+        vertical-align: -0.1em; 
+      }
+
+      /* Styles for display math (equations on their own line) */
+      .katex-display {
+        display: block;
+        text-align: center;
+        margin: 2em 0; /* Increased vertical spacing for better separation */
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 0.5em 0;
+      }
+      
+      /* Inner container for display math, which gets the background and padding */
+      .katex-display > .katex {
+        display: inline-block;
+        padding: 1em 1.5em; /* More generous padding */
+        font-size: 1.1em;
+        background-color: #f8fafc; /* Light mode background (Tailwind's slate-50) */
+        border-radius: 12px; /* Softer, larger radius */
+        box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.06); /* A softer, more modern shadow */
+      }
+      
+      /* Dark mode styling for the display math background */
+      .dark .katex-display > .katex {
+        background-color: #1e293b; /* Dark mode background (Tailwind's slate-800) */
+        box-shadow: 0 2px 8px 0 rgba(0, 0, 0, 0.25); /* Adjusted shadow for dark mode */
+      }
+    </style>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" integrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzYCZvVORPMe/sc6DkXQRvsNLGbYvc9QLzO" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" integrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
   <script type="importmap">
 {
   "imports": {

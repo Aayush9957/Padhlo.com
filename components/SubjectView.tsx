@@ -1,18 +1,17 @@
-
-
 import React from 'react';
-import { View } from '../types';
+import { View, Subject, SubscriptionType } from '../types';
 
 interface SubjectViewProps {
   sectionName: string;
-  subjectName: string;
+  subject: Subject;
+  parentSubjectName?: string;
   setView: (view: View) => void;
   canAccessTestSeries: boolean;
   canAccessTutor: boolean;
   onPremiumFeatureClick: (view: View) => void;
 }
 
-const SubjectView: React.FC<SubjectViewProps> = ({ sectionName, subjectName, setView, canAccessTestSeries, canAccessTutor, onPremiumFeatureClick }) => {
+const SubjectView: React.FC<SubjectViewProps> = ({ sectionName, subject, parentSubjectName, setView, canAccessTestSeries, canAccessTutor, onPremiumFeatureClick }) => {
   const handleKeyDown = (e: React.KeyboardEvent, action: () => void) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -20,11 +19,36 @@ const SubjectView: React.FC<SubjectViewProps> = ({ sectionName, subjectName, set
     }
   };
 
+  if (subject.subSubjects && subject.subSubjects.length > 0) {
+    // This is a parent subject (e.g., Social Studies), so list its sub-subjects.
+    return (
+        <div className="p-4 sm:p-6 lg:p-8">
+          <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">{subject.name}</h2>
+          <p className="text-slate-600 dark:text-slate-400 mb-6">Select a discipline to continue.</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {subject.subSubjects.map((subSubject) => (
+              <div
+                key={subSubject.name}
+                role="button"
+                tabIndex={0}
+                onClick={() => setView({ name: 'subject', sectionName: sectionName, parentSubjectName: subject.name, subjectName: subSubject.name })}
+                onKeyDown={(e) => handleKeyDown(e, () => setView({ name: 'subject', sectionName: sectionName, parentSubjectName: subject.name, subjectName: subSubject.name }))}
+                className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 cursor-pointer hover:shadow-xl hover:border-blue-500 border-2 border-transparent transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-slate-900"
+              >
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white">{subSubject.name}</h3>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+  }
+
+  // This is a regular or sub-subject, so show the learning paths.
   const learningPaths = [
     {
       title: 'Study Notes',
       description: 'Access detailed notes for every chapter.',
-      action: () => setView({ name: 'chapterList', sectionName, subjectName }),
+      action: () => setView({ name: 'chapterList', sectionName, subjectName: subject.name, parentSubjectName }),
       isPremium: false,
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-blue-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -36,7 +60,7 @@ const SubjectView: React.FC<SubjectViewProps> = ({ sectionName, subjectName, set
      {
       title: 'Test Series',
       description: 'Practice with mock tests, MCQs, and more.',
-      action: () => onPremiumFeatureClick({ name: 'testSeries', sectionName, subjectName }),
+      action: () => onPremiumFeatureClick({ name: 'testSeries', sectionName, subjectName: subject.name, parentSubjectName }),
       isPremium: true,
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-green-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -47,7 +71,7 @@ const SubjectView: React.FC<SubjectViewProps> = ({ sectionName, subjectName, set
     {
       title: 'Flashcards',
       description: 'Review key concepts with interactive flashcards.',
-      action: () => onPremiumFeatureClick({ name: 'flashcardChapterList', sectionName, subjectName }),
+      action: () => onPremiumFeatureClick({ name: 'flashcardChapterList', sectionName, subjectName: subject.name, parentSubjectName }),
       isPremium: true,
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-indigo-500 mb-4" viewBox="0 0 20 20" fill="currentColor">
@@ -58,7 +82,7 @@ const SubjectView: React.FC<SubjectViewProps> = ({ sectionName, subjectName, set
     {
       title: 'AI Tutor',
       description: 'Ask questions and get instant help.',
-      action: () => onPremiumFeatureClick({ name: 'tutor', sectionName, subjectName }),
+      action: () => onPremiumFeatureClick({ name: 'tutor', sectionName, subjectName: subject.name, parentSubjectName }),
       isPremium: true,
       icon: (
          <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-purple-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -66,17 +90,6 @@ const SubjectView: React.FC<SubjectViewProps> = ({ sectionName, subjectName, set
         </svg>
       )
     },
-    {
-      title: 'Downloaded Notes',
-      description: 'Access your saved notes for offline viewing.',
-      action: () => setView({ name: 'downloadedNotes' }),
-      isPremium: false,
-      icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-yellow-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-        </svg>
-      )
-    }
   ];
 
   const isLocked = (path: typeof learningPaths[0]) => {
@@ -90,7 +103,7 @@ const SubjectView: React.FC<SubjectViewProps> = ({ sectionName, subjectName, set
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">{subjectName}</h2>
+      <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">{subject.name}</h2>
       <p className="text-slate-600 dark:text-slate-400 mb-6">Choose your learning path.</p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-8">
         {learningPaths.map(path => (

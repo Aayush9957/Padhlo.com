@@ -1,12 +1,8 @@
 
-
-
-
-
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Subject, View, UserProfile } from '../types';
-import { generateChapterNotesText } from '../services/geminiService';
+import { Subject, View, UserProfile, ChapterProgress, ToastType } from '../types';
+// Fix: Updated imports to use exported modules from geminiService.
+import { NoteGenerator } from '../services/geminiService';
 import InlineSpinner from './InlineSpinner';
 
 interface ChapterListViewProps {
@@ -16,9 +12,12 @@ interface ChapterListViewProps {
   completionStatus: { [key: string]: { completed: boolean } };
   destination?: 'notes' | 'flashcards';
   userProfile: UserProfile | null;
+  parentSubjectName?: string;
+  chapterProgress?: { [key: string]: ChapterProgress };
+  addToast: (message: string, type: ToastType) => void;
 }
 
-const ChapterListView: React.FC<ChapterListViewProps> = ({ sectionName, subject, setView, completionStatus, destination = 'notes', userProfile }) => {
+const ChapterListView: React.FC<ChapterListViewProps> = ({ sectionName, subject, setView, completionStatus, destination = 'notes', userProfile, parentSubjectName, chapterProgress, addToast }) => {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; chapterName: string } | null>(null);
   const [downloadingChapter, setDownloadingChapter] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -44,9 +43,9 @@ const ChapterListView: React.FC<ChapterListViewProps> = ({ sectionName, subject,
 
   const handleChapterClick = async (chapterName: string) => {
     if (destination === 'flashcards') {
-        setView({ name: 'flashcards', sectionName, subjectName: subject.name, chapterName });
+        setView({ name: 'flashcards', sectionName, subjectName: subject.name, chapterName, parentSubjectName });
     } else { // 'notes'
-        setView({ name: 'chapter', sectionName, subjectName: subject.name, chapterName });
+        setView({ name: 'chapter', sectionName, subjectName: subject.name, chapterName, parentSubjectName });
     }
   };
   
@@ -74,7 +73,8 @@ const ChapterListView: React.FC<ChapterListViewProps> = ({ sectionName, subject,
     setDownloadingChapter(chapterName);
     setContextMenu(null);
     try {
-        const content = await generateChapterNotesText(sectionName, subject.name, chapterName, userProfile);
+        // Fix: Prefixed with the exported NoteGenerator module.
+        const content = await NoteGenerator.generateChapterNotesText(sectionName, subject.name, chapterName, userProfile);
         
         const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
         const url = URL.createObjectURL(blob);
@@ -86,7 +86,7 @@ const ChapterListView: React.FC<ChapterListViewProps> = ({ sectionName, subject,
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
     } catch (error) {
-        alert(`Failed to download notes: ${(error as Error).message}`);
+        addToast(`Failed to download notes: ${(error as Error).message}`, 'error');
     } finally {
         setDownloadingChapter(null);
     }
@@ -97,9 +97,13 @@ const ChapterListView: React.FC<ChapterListViewProps> = ({ sectionName, subject,
       <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">{subject.name} Chapters</h2>
       <p className="text-slate-600 dark:text-slate-400 mb-6">Select a chapter to get {destination}. Right-click or long-press for more options.</p>
       <ul className="space-y-3">
-        {subject.chapters.map((chapter) => {
-          const completionKey = `completion-${sectionName}-${subject.name}-${chapter.name}`;
+        {subject.chapters && subject.chapters.map((chapter) => {
+          const completionKey = `completion-${sectionName}-${parentSubjectName || ''}-${subject.name}-${chapter.name}`;
           const isCompleted = completionStatus[completionKey]?.completed;
+          const progressKey = `progress-${sectionName}-${parentSubjectName || ''}-${subject.name}-${chapter.name}`;
+          const progress = chapterProgress?.[progressKey];
+          const scrollPercentage = progress?.scrollPercentage || 0;
+
           return (
           <li
             key={chapter.name}
@@ -113,8 +117,18 @@ const ChapterListView: React.FC<ChapterListViewProps> = ({ sectionName, subject,
             onTouchMove={handleTouchEnd} // Cancel long press if finger moves
             className="bg-white dark:bg-slate-800 rounded-lg shadow p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-slate-900 flex justify-between items-center"
           >
-            <span className="text-slate-800 dark:text-slate-200">{chapter.name}</span>
-            <div className="flex items-center space-x-2">
+            <div className="flex-grow pr-4">
+                <span className="text-slate-800 dark:text-slate-200">{chapter.name}</span>
+                {scrollPercentage > 0 && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <div className="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-1.5">
+                      <div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${scrollPercentage}%` }}></div>
+                    </div>
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{scrollPercentage}%</span>
+                  </div>
+                )}
+            </div>
+            <div className="flex items-center space-x-2 flex-shrink-0">
                 {downloadingChapter === chapter.name && <InlineSpinner />}
                 {isCompleted && (
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-label="Completed">

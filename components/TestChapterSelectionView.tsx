@@ -7,9 +7,10 @@ interface TestChapterSelectionViewProps {
   subject: Subject;
   testType: 'longAnswer' | 'caseBased' | 'mcqs';
   setView: (view: View) => void;
+  parentSubjectName?: string;
 }
 
-const TestChapterSelectionView: React.FC<TestChapterSelectionViewProps> = ({ sectionName, subject, testType, setView }) => {
+const TestChapterSelectionView: React.FC<TestChapterSelectionViewProps> = ({ sectionName, subject, testType, setView, parentSubjectName }) => {
   const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
 
   const handleChapterToggle = (chapterName: string) => {
@@ -22,7 +23,7 @@ const TestChapterSelectionView: React.FC<TestChapterSelectionViewProps> = ({ sec
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
-      setSelectedChapters(subject.chapters.map(c => c.name));
+      setSelectedChapters(subject.chapters?.map(c => c.name) || []);
     } else {
       setSelectedChapters([]);
     }
@@ -38,10 +39,11 @@ const TestChapterSelectionView: React.FC<TestChapterSelectionViewProps> = ({ sec
       sectionName,
       subjectName: subject.name,
       chapters: selectedChapters,
+      parentSubjectName,
     } as any);
   };
 
-  const allSelected = selectedChapters.length === subject.chapters.length && subject.chapters.length > 0;
+  const allSelected = subject.chapters && selectedChapters.length === subject.chapters.length && subject.chapters.length > 0;
   const testTypeName = {
       longAnswer: 'Long Answer Questions',
       caseBased: 'Case-Based Questions',
@@ -58,7 +60,7 @@ const TestChapterSelectionView: React.FC<TestChapterSelectionViewProps> = ({ sec
           <input
             type="checkbox"
             id="select-all"
-            checked={allSelected}
+            checked={!!allSelected}
             onChange={handleSelectAll}
             className="h-5 w-5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-900"
           />
@@ -67,7 +69,7 @@ const TestChapterSelectionView: React.FC<TestChapterSelectionViewProps> = ({ sec
           </label>
         </div>
         <ul className="space-y-3 max-h-96 overflow-y-auto">
-          {subject.chapters.map((chapter) => (
+          {subject.chapters?.map((chapter) => (
             <li
               key={chapter.name}
               className="flex items-center p-3 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700"

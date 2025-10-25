@@ -1,43 +1,13 @@
 
-import React, { useState, useEffect } from 'react';
-import { generateChapterNotesStream, generateDiagram, getApiErrorMessage, generateChapterNotesText, generateVideoSummary } from '../services/geminiService';
-import { View, DownloadedItem, UserProfile, DownloadedVideo } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+// Fix: Updated imports to use exported modules from geminiService.
+import { NoteGenerator, DiagramGenerator, getApiErrorMessage } from '../services/geminiService';
+import { View, UserProfile, SubscriptionType, ToastType } from '../types';
 import SkeletonLoader from './SkeletonLoader';
 import ErrorMessage from './ErrorMessage';
 import InlineSpinner from './InlineSpinner';
 import Spinner from './Spinner';
-
-// Fix: Removed duplicate global type declarations for `window.aistudio`.
-// These types are assumed to be defined elsewhere in the project's global scope,
-// and redeclaring them was causing compilation errors.
-declare global {
-  interface Window {
-    marked: {
-      parse(markdown: string): string;
-    };
-    mermaid: {
-      run(): void;
-    };
-    jspdf: any;
-    html2canvas: any;
-    aistudio: {
-        hasSelectedApiKey(): Promise<boolean>;
-        openSelectKey(): Promise<void>;
-    };
-  }
-}
-
-const blobToBase64 = (blob: Blob): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      resolve((reader.result as string).split(',')[1]);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-};
-
+import MarkdownContent from './MarkdownContent';
 
 interface DiagramState {
   loading: boolean;
@@ -51,15 +21,27 @@ const DiagramPlaceholder: React.FC<{ prompt: string }> = ({ prompt }) => {
         content: null,
         error: null,
     });
+    const isMounted = useRef(true);
+
+    useEffect(() => {
+        isMounted.current = true;
+        return () => { isMounted.current = false; };
+    }, []);
 
     const loadDiagram = async () => {
+        if (!isMounted.current) return;
         setDiagram({ loading: true, content: null, error: null });
         try {
-            const diagramMarkdown = await generateDiagram(prompt);
-            setDiagram({ loading: false, content: diagramMarkdown, error: null });
+            // Fix: Prefixed with the exported DiagramGenerator module.
+            const diagramMarkdown = await DiagramGenerator.generateDiagram(prompt);
+            if (isMounted.current) {
+                setDiagram({ loading: false, content: diagramMarkdown, error: null });
+            }
         } catch (e) {
             const errorMessage = getApiErrorMessage(e, 'Failed to load diagram.');
-            setDiagram({ loading: false, content: null, error: errorMessage });
+             if (isMounted.current) {
+                setDiagram({ loading: false, content: null, error: errorMessage });
+            }
         }
     };
 
@@ -77,11 +59,12 @@ const DiagramPlaceholder: React.FC<{ prompt: string }> = ({ prompt }) => {
     }
     
     if (diagram.content) {
-        return <div dangerouslySetInnerHTML={{ __html: window.marked.parse(diagram.content) }} />;
+        // The container for the diagram needs to be un-columned to prevent breaking
+        return <div className="break-inside-avoid" dangerouslySetInnerHTML={{ __html: window.marked.parse(diagram.content) }} />;
     }
 
     return (
-        <div className="flex flex-col items-center justify-center p-4 my-4 bg-slate-100 dark:bg-slate-700/50 rounded-lg min-h-[120px] border-2 border-dashed border-slate-300 dark:border-slate-600">
+        <div className="flex flex-col items-center justify-center p-4 my-4 bg-slate-100 dark:bg-slate-700/50 rounded-lg min-h-[120px] border-2 border-dashed border-slate-300 dark:border-slate-600 break-inside-avoid">
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-2 text-center">Diagram placeholder: "{prompt}"</p>
             <button
                 onClick={loadDiagram}
@@ -104,6 +87,11 @@ interface ChapterViewProps {
   completionData: { completed: boolean; feedback?: any } | null;
   onToggleCompletion: (newStatus: boolean) => void;
   onFeedbackSubmit: (feedback: any) => void;
+  parentSubjectName?: string;
+  onUpdateProgress: (chapterKey: string, scrollPercentage: number) => void;
+  subscription: SubscriptionType;
+  onPremiumFeatureClick: (view: View) => void;
+  addToast: (message: string, type: ToastType) => void;
 }
 
 const ChapterView: React.FC<ChapterViewProps> = ({
@@ -116,22 +104,43 @@ const ChapterView: React.FC<ChapterViewProps> = ({
   completionData,
   onToggleCompletion,
   onFeedbackSubmit,
+  parentSubjectName,
+  onUpdateProgress,
+  subscription,
+  onPremiumFeatureClick,
+  addToast,
 }) => {
   const [streamedContent, setStreamedContent] = useState('');
   const [isStreamComplete, setIsStreamComplete] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [showDetailedFeedback, setShowDetailedFeedback] = useState<boolean>(false);
   const [feedbackText, setFeedbackText] = useState<string>('');
   
-  const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
-  const [videoStatusMessage, setVideoStatusMessage] = useState('');
-  const [generatedVideo, setGeneratedVideo] = useState<{ url: string; blob: Blob } | null>(null);
-  const [videoError, setVideoError] = useState<string | null>(null);
+  const [pagination, setPagination] = useState({ currentPage: 1, totalPages: 1 });
 
   const isCompleted = completionData?.completed || false;
   const feedbackSubmitted = !!completionData?.feedback;
+  const isPremium = subscription === 'full';
+
+  const contentRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const throttleTimer = useRef<number | null>(null);
+  const resizeObserver = useRef<ResizeObserver | null>(null);
+  
+  const chapterKey = `progress-${sectionName}-${parentSubjectName || ''}-${subjectName}-${chapterName}`;
+
+  const calculatePagination = () => {
+      const container = scrollContainerRef.current;
+      if (!container) return;
+      
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const totalPages = Math.max(1, Math.ceil(scrollHeight / clientHeight));
+      const currentPage = Math.min(totalPages, Math.max(1, Math.floor(scrollTop / clientHeight) + 1));
+      
+      setPagination({ currentPage, totalPages });
+  };
   
   useEffect(() => {
     if (offlineContent) {
@@ -147,7 +156,8 @@ const ChapterView: React.FC<ChapterViewProps> = ({
     setError(null);
 
     const fetchNotes = async () => {
-      await generateChapterNotesStream(
+      // Fix: Prefixed with the exported NoteGenerator module.
+      await NoteGenerator.generateChapterNotesStream(
         sectionName, subjectName, chapterName, userProfile,
         (chunk) => {
           if (loading) setLoading(false);
@@ -168,17 +178,86 @@ const ChapterView: React.FC<ChapterViewProps> = ({
   }, [sectionName, subjectName, chapterName, offlineContent, userProfile]);
   
   useEffect(() => {
-    if ((isStreamComplete || offlineContent) && streamedContent && window.mermaid) {
+    if ((isStreamComplete || offlineContent) && streamedContent) {
       const timer = setTimeout(() => {
         try {
-          window.mermaid.run();
+          if (window.mermaid) {
+            window.mermaid.run();
+          }
+          calculatePagination(); // Recalculate after mermaid renders
         } catch (e) {
           console.error("Error rendering mermaid diagram:", e);
         }
-      }, 100);
+      }, 200);
       return () => clearTimeout(timer);
     }
   }, [isStreamComplete, streamedContent, offlineContent]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    // Set up resize observer to recalculate pagination on size changes
+    resizeObserver.current = new ResizeObserver(() => {
+        calculatePagination();
+    });
+    resizeObserver.current.observe(container);
+    
+    // Also recalculate when new diagram images load
+    const handleImageLoad = (event: Event) => {
+        if((event.target as HTMLElement).tagName === 'IMG') {
+            calculatePagination();
+        }
+    };
+    container.addEventListener('load', handleImageLoad, true);
+
+
+    return () => {
+        if (resizeObserver.current) {
+            resizeObserver.current.disconnect();
+        }
+        container.removeEventListener('load', handleImageLoad, true);
+    };
+  }, [streamedContent]);
+
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || offlineContent) return;
+
+    const handleScroll = () => {
+        calculatePagination();
+        if (throttleTimer.current) return;
+
+        throttleTimer.current = window.setTimeout(() => {
+            const { scrollTop, scrollHeight, clientHeight } = container;
+            if (scrollHeight <= clientHeight) {
+                onUpdateProgress(chapterKey, 100);
+                throttleTimer.current = null;
+                return;
+            };
+
+            const scrollPercentage = Math.round(
+                ((scrollTop + clientHeight) / scrollHeight) * 100
+            );
+            
+            onUpdateProgress(chapterKey, Math.min(100, scrollPercentage));
+
+            throttleTimer.current = null;
+        }, 250);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    calculatePagination(); // Initial calculation
+
+    return () => {
+        container.removeEventListener('scroll', handleScroll);
+        if (throttleTimer.current) {
+            clearTimeout(throttleTimer.current);
+        }
+    };
+  }, [streamedContent, offlineContent, chapterKey, onUpdateProgress]);
+
 
   const handleRatingSubmit = (rating: 'helpful' | 'not_helpful') => {
     onFeedbackSubmit({ rating, timestamp: new Date().toISOString() });
@@ -193,115 +272,100 @@ const ChapterView: React.FC<ChapterViewProps> = ({
     setShowDetailedFeedback(false);
   };
   
-   const handleDownload = async () => {
-    if (!isStreamComplete || isDownloading) return;
-    
-    const STORAGE_KEY = 'padhlo-downloads';
-    try {
-      const textToSave = await generateChapterNotesText(sectionName, subjectName, chapterName, userProfile);
+   const handleDownloadPdf = async () => {
+        if (!contentRef.current || isDownloadingPdf) return;
+        setIsDownloadingPdf(true);
+        addToast("Preparing your PDF... This might take a moment.", 'info');
 
-      const itemsRaw = localStorage.getItem(STORAGE_KEY);
-      const items: DownloadedItem[] = itemsRaw ? JSON.parse(itemsRaw) : [];
-      
-      const noteId = `note-${sectionName}-${subjectName}-${chapterName}`;
-      const existingItemIndex = items.findIndex(n => n.id === noteId);
+        const printContainer = document.createElement('div');
+        document.body.appendChild(printContainer);
 
-      // Fix: Changed type from unimported 'DownloadedNote' to the already imported 'DownloadedItem' union type.
-      const newItem: DownloadedItem = {
-        id: noteId, type: 'note', sectionName, subjectName, chapterName,
-        content: textToSave, downloadedAt: new Date().toISOString()
-      };
+        // --- Styling for Print ---
+        printContainer.style.position = 'absolute';
+        printContainer.style.left = '-9999px';
+        printContainer.style.width = '210mm';
+        printContainer.style.padding = '15mm';
+        printContainer.style.background = 'white';
+        printContainer.style.color = 'black'; // Ensure text is black
+        printContainer.style.boxSizing = 'border-box';
+        printContainer.className = 'prose'; // Apply base typography styles
 
-      if (existingItemIndex > -1) {
-        items[existingItemIndex] = newItem;
-      } else {
-        items.unshift(newItem);
-      }
+        const contentToPrint = contentRef.current.cloneNode(true) as HTMLElement;
+        contentToPrint.classList.remove('lg:columns-2'); // Remove multi-column layout
+        printContainer.appendChild(contentToPrint);
 
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-      alert('Note saved for offline access!');
-    } catch (e) {
-      console.error("Failed to save note to local storage", e);
-      alert('Failed to save note for offline access.');
-    }
-  };
-  
-    const handleGenerateVideo = async () => {
-        if (isGeneratingVideo) return;
-        
         try {
-            if (!window.aistudio || typeof window.aistudio.hasSelectedApiKey !== 'function') {
-                throw new Error("API key selection mechanism is not available.");
+            const { jsPDF } = window.jspdf;
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for render
+
+            const canvas = await window.html2canvas(printContainer, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                allowTaint: true,
+            });
+            
+            document.body.removeChild(printContainer);
+
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = pdf.internal.pageSize.getHeight();
+            const canvasWidth = canvas.width;
+            const canvasHeight = canvas.height;
+            const ratio = canvasWidth / canvasHeight;
+            const imgHeightInPdf = pdfWidth / ratio;
+            
+            let heightLeft = imgHeightInPdf;
+            let position = 0;
+
+            pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeightInPdf);
+            heightLeft -= pdfHeight;
+
+            while (heightLeft > 0) {
+                position -= pdfHeight;
+                pdf.addPage();
+                pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeightInPdf);
+                heightLeft -= pdfHeight;
             }
             
-            const hasKey = await window.aistudio.hasSelectedApiKey();
-            if (!hasKey) {
-                await window.aistudio.openSelectKey();
+            const pageCount = pdf.getNumberOfPages();
+            for (let i = 1; i <= pageCount; i++) {
+                pdf.setPage(i);
+                pdf.setFontSize(9);
+                pdf.setTextColor(150);
+                pdf.text(
+                    `Page ${i} of ${pageCount} - Padhlo.com`,
+                    pdf.internal.pageSize.getWidth() / 2,
+                    pdf.internal.pageSize.getHeight() - 10,
+                    { align: 'center' }
+                );
             }
-        
-            setIsGeneratingVideo(true);
-            setVideoError(null);
-            setGeneratedVideo(null);
             
-            const videoUrl = await generateVideoSummary(
-                chapterName,
-                streamedContent,
-                (status) => setVideoStatusMessage(status)
-            );
-            
-            const response = await fetch(videoUrl);
-            const videoBlob = await response.blob();
+            const safeFileName = chapterName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            pdf.save(`padhlo_com_${safeFileName}_notes.pdf`);
+            addToast("Download complete!", 'success');
 
-            setGeneratedVideo({ url: videoUrl, blob: videoBlob });
-
-        } catch (e: any) {
-            console.error("Video generation failed", e);
-            setVideoError(e.message || "An unknown error occurred during video generation.");
+        } catch (error) {
+            console.error("Error generating PDF:", error);
+            addToast("Sorry, an error occurred while generating the PDF.", 'error');
+            if (document.body.contains(printContainer)) {
+                document.body.removeChild(printContainer);
+            }
         } finally {
-            setIsGeneratingVideo(false);
-            setVideoStatusMessage('');
+            setIsDownloadingPdf(false);
         }
     };
 
-    const handleSaveVideo = async () => {
-        if (!generatedVideo) return;
-
-        const STORAGE_KEY = 'padhlo-downloads';
-        try {
-            const base64Content = await blobToBase64(generatedVideo.blob);
-            
-            const itemsRaw = localStorage.getItem(STORAGE_KEY);
-            const items: DownloadedItem[] = itemsRaw ? JSON.parse(itemsRaw) : [];
-
-            const videoId = `video-${sectionName}-${subjectName}-${chapterName}`;
-            const existingItemIndex = items.findIndex(item => item.id === videoId);
-
-            const newItem: DownloadedVideo = {
-                id: videoId,
-                type: 'video',
-                sectionName,
-                subjectName,
-                chapterName,
-                content: base64Content,
-                videoMimeType: generatedVideo.blob.type,
-                downloadedAt: new Date().toISOString()
-            };
-
-            if (existingItemIndex > -1) {
-                items[existingItemIndex] = newItem;
-            } else {
-                items.unshift(newItem);
-            }
-
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-            alert('Video saved for offline access!');
-
-        } catch (e) {
-            console.error("Failed to save video to local storage", e);
-            alert('Failed to save video.');
+    const handleDownloadPdfClick = () => {
+        if (isPremium) {
+            handleDownloadPdf();
+        } else {
+            // The key 'downloadedNotes' is just an identifier for this premium feature.
+            onPremiumFeatureClick({ name: 'chapter', sectionName, subjectName, chapterName });
         }
     };
-
+  
   const renderContent = () => {
     if (loading) {
       return <SkeletonLoader type="text" />;
@@ -314,12 +378,15 @@ const ChapterView: React.FC<ChapterViewProps> = ({
     const parts = streamedContent.split(diagramPlaceholderRegex);
 
     return (
-        <article className="prose dark:prose-invert max-w-none">
+        <article ref={contentRef} className="prose dark:prose-invert max-w-none 
+          lg:columns-2 lg:gap-x-12 
+          prose-headings:break-inside-avoid prose-p:text-justify prose-ul:break-inside-avoid prose-ol:break-inside-avoid
+        ">
             {parts.map((part, index) => {
                 if (index % 2 === 1) { // This is a diagram prompt
                     return <DiagramPlaceholder key={index} prompt={part} />;
                 } else { // This is regular markdown text
-                    return <div key={index} dangerouslySetInnerHTML={{ __html: window.marked.parse(part) }} />;
+                    return <MarkdownContent key={index} content={part} />;
                 }
             })}
              {!isStreamComplete && !offlineContent && <div className="animate-pulse">...</div>}
@@ -329,16 +396,53 @@ const ChapterView: React.FC<ChapterViewProps> = ({
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
+       <style>{`
+          .prose {
+             --tw-prose-bullets: #3b82f6;
+             --tw-prose-invert-bullets: #60a5fa;
+          }
+          .prose ul > li::before {
+             content: '•';
+             color: var(--tw-prose-bullets);
+             font-weight: bold;
+          }
+          .dark .prose ul > li::before {
+             color: var(--tw-prose-invert-bullets);
+          }
+           .prose blockquote {
+             font-style: normal;
+             border-left-color: #3b82f6;
+             background-color: #f0f9ff;
+             padding: 0.5em 1em;
+             border-radius: 0.25rem;
+           }
+           .dark .prose blockquote {
+              border-left-color: #60a5fa;
+              background-color: #1e293b;
+           }
+       `}</style>
       <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2 print:mt-0">{chapterName}</h2>
       <p className="text-lg text-slate-600 dark:text-slate-400 mb-6">Notes for {subjectName}</p>
       
       <div 
-        className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 min-h-[300px] printable-content"
-        aria-live="polite"
-        aria-busy={loading || (!isStreamComplete && !error)}
+        className="relative bg-white dark:bg-slate-800 rounded-lg shadow-2xl printable-content overflow-hidden"
       >
-        {renderContent()}
+        <div
+          ref={scrollContainerRef}
+          className="p-8 min-h-[300px] max-h-[70vh] overflow-y-auto"
+          aria-live="polite"
+          aria-busy={loading || (!isStreamComplete && !error)}
+        >
+          {renderContent()}
+        </div>
+        
+        { (isStreamComplete || offlineContent) &&
+            <div className="absolute bottom-4 right-6 bg-slate-100 dark:bg-slate-900 px-3 py-1 rounded-full text-xs font-mono text-slate-500 dark:text-slate-400 shadow-md no-print">
+                Page {pagination.currentPage} / {pagination.totalPages}
+            </div>
+        }
       </div>
+
 
       {(isStreamComplete || offlineContent) && !error && (
         <div className="mt-8 flex flex-wrap justify-center items-center gap-4 no-print">
@@ -364,69 +468,36 @@ const ChapterView: React.FC<ChapterViewProps> = ({
             </button>
           )}
           <button
-            onClick={handleDownload}
-            disabled={isDownloading || !isStreamComplete}
+            onClick={handleDownloadPdfClick}
+            disabled={isDownloadingPdf || !isStreamComplete}
             className="flex items-center justify-center gap-2 px-6 py-2 w-52 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-green-500 transition-colors disabled:bg-slate-400"
           >
-            {isDownloading ? (
+            {isDownloadingPdf ? (
               <>
                 <InlineSpinner />
-                <span>Saving Note...</span>
+                <span>Generating PDF...</span>
               </>
             ) : (
-              <>
-                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                <span>Save Note for Offline</span>
-              </>
+                isPremium ? (
+                     <>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        <span>Download as PDF</span>
+                      </>
+                ) : (
+                    <>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                        </svg>
+                        <span>Download as PDF</span>
+                    </>
+                )
             )}
           </button>
-            <button
-                onClick={handleGenerateVideo}
-                disabled={isGeneratingVideo || !isStreamComplete}
-                className="flex items-center justify-center gap-2 px-6 py-2 w-52 bg-purple-600 text-white font-semibold rounded-md hover:bg-purple-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-purple-500 transition-colors disabled:bg-slate-400"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 001.553.832l3-2a1 1 0 000-1.664l-3-2z" />
-                </svg>
-                <span>Generate Video Summary</span>
-            </button>
         </div>
       )}
       
-      {/* Video Generation UI */}
-        <div className="mt-6 no-print">
-            {isGeneratingVideo && (
-                <div className="p-6 bg-blue-50 dark:bg-blue-900/50 rounded-lg text-center shadow-inner">
-                    <Spinner />
-                    <p className="mt-4 text-lg text-blue-800 dark:text-blue-300 font-semibold">{videoStatusMessage || "Initializing..."}</p>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Please keep this tab open. Video generation can take several minutes.</p>
-                </div>
-            )}
-            {videoError && !isGeneratingVideo && (
-                <ErrorMessage title="Video Generation Failed" message={videoError} />
-            )}
-            {generatedVideo && !isGeneratingVideo && (
-                <div className="p-6 bg-green-50 dark:bg-green-900/50 rounded-lg shadow-inner">
-                    <h3 className="text-2xl font-bold text-green-800 dark:text-green-300 mb-4">Video Summary Ready!</h3>
-                    <video controls src={generatedVideo.url} className="w-full rounded-md shadow-lg" />
-                    <div className="mt-4 flex justify-center">
-                        <button
-                            onClick={handleSaveVideo}
-                            className="flex items-center justify-center gap-2 px-6 py-2 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 transition-colors"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            Save Video for Offline
-                        </button>
-                    </div>
-                </div>
-            )}
-        </div>
-
-
       {!offlineContent && isStreamComplete && !error && (
         <div className="mt-8 p-6 bg-slate-100 dark:bg-slate-800/50 rounded-lg shadow-inner no-print">
             {feedbackSubmitted ? (

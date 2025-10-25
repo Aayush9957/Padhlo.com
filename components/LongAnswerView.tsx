@@ -1,19 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { generateLongAnswerQuestions, getApiErrorMessage, analyzeSubjectiveTestStream, generateModelAnswerStream } from '../services/geminiService';
+// Fix: Updated imports to use exported modules from geminiService.
+import { TestGenerator, AnswerAnalyzer, getApiErrorMessage } from '../services/geminiService';
 import { View, ScoreRecord, SubjectiveAnswer } from '../types';
 import Spinner from './Spinner';
 import SkeletonLoader from './SkeletonLoader';
 import ErrorMessage from './ErrorMessage';
 import { extractFinalJson } from '../testUtils';
-
-declare global {
-  interface Window {
-    marked: {
-      parse(markdown: string): string;
-    };
-  }
-}
+import MarkdownContent from './MarkdownContent';
 
 interface LongAnswerViewProps {
   sectionName: string;
@@ -42,7 +36,8 @@ const LongAnswerView: React.FC<LongAnswerViewProps> = ({ sectionName, subjectNam
     setLoading(true);
     setError(null);
     try {
-      const generated = await generateLongAnswerQuestions(sectionName, subjectName, chapters, 6);
+      // Fix: Prefixed with the exported TestGenerator module.
+      const generated = await TestGenerator.generateLongAnswerQuestions(sectionName, subjectName, chapters, 6);
       setQuestions(JSON.parse(generated));
       setAnswers({});
       setIsTestFinished(false);
@@ -88,7 +83,8 @@ const LongAnswerView: React.FC<LongAnswerViewProps> = ({ sectionName, subjectNam
     setAnalysisReport('');
     let fullReport = '';
 
-    analyzeSubjectiveTestStream(
+    // Fix: Prefixed with the exported AnswerAnalyzer module.
+    AnswerAnalyzer.analyzeSubjectiveTestStream(
         'Long Answer', 30, 5, questions, answers,
         (chunk) => {
             fullReport += chunk;
@@ -119,7 +115,8 @@ const LongAnswerView: React.FC<LongAnswerViewProps> = ({ sectionName, subjectNam
   const handleGetModelAnswer = (index: number) => {
     setModelAnswers(prev => ({ ...prev, [index]: { loading: true, answer: '', error: null, isComplete: false, visible: true } }));
 
-    generateModelAnswerStream(
+    // Fix: Prefixed with the exported AnswerAnalyzer module.
+    AnswerAnalyzer.generateModelAnswerStream(
         questions[index], sectionName, subjectName,
         (chunk) => {
             setModelAnswers(prev => ({ ...prev, [index]: { ...prev[index], loading: false, answer: (prev[index]?.answer || '') + chunk }}));
@@ -218,10 +215,7 @@ const LongAnswerView: React.FC<LongAnswerViewProps> = ({ sectionName, subjectNam
             <div className="p-6 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
                 <h4 className="font-bold text-slate-800 dark:text-slate-200 text-lg">Performance Analysis</h4>
                 {isAnalyzing && !analysisReport && <Spinner />}
-                <article 
-                    className="mt-2 text-slate-700 dark:text-slate-300 prose dark:prose-invert max-w-none"
-                    dangerouslySetInnerHTML={{ __html: window.marked.parse(analysisReport) }}
-                />
+                <MarkdownContent content={analysisReport} className="mt-2 text-slate-700 dark:text-slate-300 prose dark:prose-invert max-w-none" />
             </div>
              <div className="mt-8">
                 <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-200 mb-4">Model Answers</h3>
@@ -238,10 +232,7 @@ const LongAnswerView: React.FC<LongAnswerViewProps> = ({ sectionName, subjectNam
                                     {modelAnswers[index].loading && <Spinner />}
                                     {modelAnswers[index].error && <ErrorMessage title="Error" message={modelAnswers[index].error!} />}
                                     {modelAnswers[index].answer && (
-                                        <article 
-                                            className="prose dark:prose-invert max-w-none"
-                                            dangerouslySetInnerHTML={{ __html: window.marked.parse(modelAnswers[index].answer!) }}
-                                        />
+                                        <MarkdownContent content={modelAnswers[index].answer!} className="prose dark:prose-invert max-w-none" />
                                     )}
                                 </div>
                             )}

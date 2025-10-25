@@ -52,12 +52,12 @@ const SplashScreen: React.FC = () => {
             animation:
                 typing 2.5s steps(10, end),
                 blink-caret .75s step-end infinite;
-            width: 11ch;
+            width: 12ch;
         }
 
         @keyframes typing {
             from { width: 0 }
-            to { width: 11ch; }
+            to { width: 12ch; }
         }
 
         @keyframes blink-caret {

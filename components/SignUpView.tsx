@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { View } from '../types';
+import { View, UserProfile } from '../types';
 
 interface SignUpViewProps {
   onSignUp: (name: string, email: string, pass: string) => string | null;

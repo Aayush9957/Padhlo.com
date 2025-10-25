@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { View, UserProfile, User } from '../types';
+import { View, UserProfile, User, ToastType } from '../types';
 
 // Helper function for robust validation of imported profile data
 const validateProfileData = (data: any): string | null => {
@@ -12,17 +11,11 @@ const validateProfileData = (data: any): string | null => {
     const hasName = 'name' in data;
 
     if (!hasDisplayName && !hasName) return "Missing required field: 'displayName'.";
-    if (!('standard' in data)) return "Missing required field: 'standard'.";
     if (!('exams' in data)) return "Missing required field: 'exams'.";
 
     const nameValue = hasDisplayName ? data.displayName : data.name;
     if (typeof nameValue !== 'string') {
         return "Invalid 'displayName' field. It must be a string.";
-    }
-
-    const validStandards = ['Class 11', 'Class 12', ''];
-    if (typeof data.standard !== 'string' || !validStandards.includes(data.standard)) {
-        return `'standard' field must be one of 'Class 11', 'Class 12', or empty.`;
     }
 
     if (!Array.isArray(data.exams)) {
@@ -47,11 +40,11 @@ interface ProfileViewProps {
     profile: UserProfile;
     onSaveProfile: (profile: UserProfile) => void;
     setIsViewDirty: (isDirty: boolean) => void;
+    addToast: (message: string, type: ToastType) => void;
 }
 
-const ProfileView: React.FC<ProfileViewProps> = ({ setView, user, profile: initialProfile, onSaveProfile, setIsViewDirty }) => {
+const ProfileView: React.FC<ProfileViewProps> = ({ setView, user, profile: initialProfile, onSaveProfile, setIsViewDirty, addToast }) => {
     const [profile, setProfile] = useState<UserProfile>(initialProfile);
-    const [savedMessageVisible, setSavedMessageVisible] = useState(false);
     
     const [isCameraOpen, setIsCameraOpen] = useState(false);
     const [modalTrigger, setModalTrigger] = useState<HTMLButtonElement | null>(null);
@@ -101,10 +94,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({ setView, user, profile: initi
         setProfile(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleStandardChange = (standard: 'Class 11' | 'Class 12') => {
-        setProfile(prev => ({ ...prev, standard }));
-    };
-
     const handleExamChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { value, checked } = e.target;
         const exam = value as 'NEET' | 'JEE';
@@ -122,8 +111,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({ setView, user, profile: initi
     const handleSave = (e: React.FormEvent) => {
         e.preventDefault();
         onSaveProfile(profile);
-        setSavedMessageVisible(true);
-        setTimeout(() => setSavedMessageVisible(false), 3000);
     };
     
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -147,7 +134,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ setView, user, profile: initi
             setIsCameraOpen(true);
         } catch (error) {
             console.error("Error accessing camera:", error);
-            alert("Could not access camera. Please ensure you have given permission.");
+            addToast("Could not access camera. Please ensure you have given permission.", 'error');
         }
     };
 
@@ -187,7 +174,7 @@ const ProfileView: React.FC<ProfileViewProps> = ({ setView, user, profile: initi
             URL.revokeObjectURL(url);
         } catch (error) {
             console.error("Error exporting profile:", error);
-            alert("Failed to export profile.");
+            addToast("Failed to export profile.", 'error');
         }
     };
 
@@ -213,17 +200,16 @@ const ProfileView: React.FC<ProfileViewProps> = ({ setView, user, profile: initi
 
                 const sanitizedProfile: UserProfile = {
                     displayName: importedProfile.displayName || importedProfile.name,
-                    standard: importedProfile.standard,
                     exams: importedProfile.exams,
                     profilePicture: importedProfile.profilePicture || undefined,
                 };
 
                 setProfile(sanitizedProfile);
                 onSaveProfile(sanitizedProfile);
-                alert("Profile imported successfully!");
+                addToast("Profile imported successfully!", 'success');
             } catch (error) {
                 console.error("Error importing profile:", error);
-                alert(`Failed to import profile. Error: ${(error as Error).message}`);
+                addToast(`Failed to import profile. Error: ${(error as Error).message}`, 'error');
             } finally {
                 if (e.target) e.target.value = '';
             }
@@ -288,27 +274,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({ setView, user, profile: initi
 
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                            Your Class
-                        </label>
-                        <div className="mt-2 flex space-x-4">
-                            {['Class 11', 'Class 12'].map(std => (
-                                <label key={std} className="flex items-center">
-                                    <input
-                                        type="radio"
-                                        name="standard"
-                                        value={std}
-                                        checked={profile.standard === std}
-                                        onChange={() => handleStandardChange(std as 'Class 11' | 'Class 12')}
-                                        className="h-4 w-4 text-blue-600 border-slate-300 focus:ring-blue-500"
-                                    />
-                                    <span className="ml-2 text-slate-700 dark:text-slate-300">{std}</span>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                             Exam Preferences
                         </label>
                         <div className="mt-2 flex space-x-4">
@@ -350,12 +315,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({ setView, user, profile: initi
                                 Import Profile
                             </button>
                              <input type="file" ref={importFileRef} className="hidden" accept=".json" onChange={handleImport} />
-
-                            {savedMessageVisible && (
-                                <span className="text-sm font-medium text-green-600 dark:text-green-400 transition-opacity duration-300">
-                                    Profile saved successfully!
-                                </span>
-                            )}
                         </div>
                     </div>
                 </form>

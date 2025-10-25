@@ -1,6 +1,5 @@
 
 
-
 import React from 'react';
 import { Section, View, User } from '../types';
 
@@ -26,17 +25,21 @@ const Home: React.FC<HomeProps> = ({ sections, setView, user }) => {
       <p className="text-slate-600 dark:text-slate-400 mb-6">Choose Your Section to get started.</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {sections.map((section) => (
-          <div
-            key={section.name}
-            role="button"
-            tabIndex={0}
-            onClick={() => setView({ name: 'section', sectionName: section.name })}
-            onKeyDown={(e) => handleKeyDown(e, () => setView({ name: 'section', sectionName: section.name }))}
-            className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer transform hover:scale-105 transition-transform duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-slate-900"
-          >
-            <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">{section.name}</h3>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">{section.description}</p>
-          </div>
+          <React.Fragment key={section.name}>
+            {section.name === 'Entrance Courses' && (
+              <div className="col-span-1 sm:col-span-2 lg:col-span-4 h-px bg-slate-200 dark:bg-slate-700 my-4" role="separator" />
+            )}
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setView({ name: 'section', sectionName: section.name })}
+              onKeyDown={(e) => handleKeyDown(e, () => setView({ name: 'section', sectionName: section.name }))}
+              className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer transform hover:scale-105 transition-transform duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-slate-900"
+            >
+              <h3 className="text-xl font-semibold text-blue-600 dark:text-blue-400">{section.name}</h3>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">{section.description}</p>
+            </div>
+          </React.Fragment>
         ))}
       </div>
       <footer className="text-center mt-12">

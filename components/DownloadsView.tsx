@@ -27,7 +27,6 @@ interface DownloadsViewProps {
 
 const DownloadsView: React.FC<DownloadsViewProps> = ({ setView }) => {
     const [items, setItems] = useState<DownloadedItem[]>([]);
-    const [playingVideo, setPlayingVideo] = useState<DownloadedItem | null>(null);
 
     useEffect(() => {
         setItems(getItems());
@@ -42,8 +41,6 @@ const DownloadsView: React.FC<DownloadsViewProps> = ({ setView }) => {
                 chapterName: item.chapterName,
                 offlineContent: item.content
             });
-        } else if (item.type === 'video') {
-            setPlayingVideo(item);
         }
     };
 
@@ -71,14 +68,7 @@ const DownloadsView: React.FC<DownloadsViewProps> = ({ setView }) => {
         return acc;
     }, {} as Record<string, DownloadedItem[]>);
 
-    const renderIcon = (itemType: 'note' | 'video') => {
-        if (itemType === 'video') {
-            return (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-purple-500 mr-3" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 001.553.832l3-2a1 1 0 000-1.664l-3-2z" />
-                </svg>
-            );
-        }
+    const renderIcon = (itemType: 'note') => {
         // Default to note icon
         return (
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -94,7 +84,7 @@ const DownloadsView: React.FC<DownloadsViewProps> = ({ setView }) => {
             {items.length === 0 ? (
                 <div className="text-center py-10 bg-white dark:bg-slate-800 rounded-lg shadow">
                     <p className="text-slate-500 dark:text-slate-400">You haven't downloaded any items yet.</p>
-                    <p className="text-slate-500 dark:text-slate-400 mt-2">Notes and videos you save will appear here for offline access.</p>
+                    <p className="text-slate-500 dark:text-slate-400 mt-2">Notes you save will appear here for offline access.</p>
                 </div>
             ) : (
                 <div className="space-y-8">
@@ -136,25 +126,6 @@ const DownloadsView: React.FC<DownloadsViewProps> = ({ setView }) => {
                             </ul>
                         </div>
                     ))}
-                </div>
-            )}
-            
-            {/* Video Player Modal */}
-            {playingVideo && playingVideo.type === 'video' && (
-                 <div 
-                    className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
-                    onClick={() => setPlayingVideo(null)}
-                >
-                    <div 
-                        className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-xl max-w-3xl w-full"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200 mb-4">{playingVideo.chapterName}</h3>
-                        <video controls autoPlay src={`data:${playingVideo.videoMimeType};base64,${playingVideo.content}`} className="w-full rounded-lg">
-                            Your browser does not support the video tag.
-                        </video>
-                        <button onClick={() => setPlayingVideo(null)} className="mt-4 px-4 py-2 bg-slate-200 dark:bg-slate-600 rounded-md">Close</button>
-                    </div>
                 </div>
             )}
         </div>

@@ -54,9 +54,17 @@ const Header: React.FC<HeaderProps> = ({
     if ('sectionName' in currentView && currentView.sectionName) {
         crumbs.push({ label: currentView.sectionName, view: { name: 'section', sectionName: currentView.sectionName } });
     }
-    if ('subjectName' in currentView && currentView.subjectName) {
-        crumbs.push({ label: currentView.subjectName, view: { name: 'subject', sectionName: currentView.sectionName, subjectName: currentView.subjectName } });
+    // New logic for parent subject (e.g., "Social Studies")
+    if ('parentSubjectName' in currentView && currentView.parentSubjectName) {
+        crumbs.push({ label: currentView.parentSubjectName, view: { name: 'subject', sectionName: currentView.sectionName, subjectName: currentView.parentSubjectName } });
     }
+    if ('subjectName' in currentView && currentView.subjectName && currentView.name !== 'subject') {
+        const subjectView: View = { name: 'subject', sectionName: currentView.sectionName, subjectName: currentView.subjectName, parentSubjectName: 'parentSubjectName' in currentView ? currentView.parentSubjectName : undefined };
+        crumbs.push({ label: currentView.subjectName, view: subjectView });
+    } else if (currentView.name === 'subject' && currentView.subjectName) {
+         crumbs.push({ label: currentView.subjectName });
+    }
+
 
     // Specific endpoints
     switch (currentView.name) {
@@ -77,13 +85,13 @@ const Header: React.FC<HeaderProps> = ({
             break;
         case 'flashcards':
             crumbs.push(
-                { label: 'Flashcards', view: { name: 'flashcardChapterList', sectionName: currentView.sectionName, subjectName: currentView.subjectName } },
+                { label: 'Flashcards', view: { name: 'flashcardChapterList', sectionName: currentView.sectionName, subjectName: currentView.subjectName, parentSubjectName: currentView.parentSubjectName } },
                 { label: currentView.chapterName }
             );
             break;
         case 'testChapterSelection':
              crumbs.push(
-                { label: 'Test Series', view: { name: 'testSeries', sectionName: currentView.sectionName, subjectName: currentView.subjectName } },
+                { label: 'Test Series', view: { name: 'testSeries', sectionName: currentView.sectionName, subjectName: currentView.subjectName, parentSubjectName: currentView.parentSubjectName } },
                 { label: 'Chapter Selection' }
             );
             break;
@@ -92,19 +100,17 @@ const Header: React.FC<HeaderProps> = ({
         case 'mcqs':
             const testLabels = { longAnswer: 'Long Answer Test', caseBased: 'Case-Based Test', mcqs: 'MCQs Practice' };
             crumbs.push(
-                { label: 'Test Series', view: { name: 'testSeries', sectionName: currentView.sectionName, subjectName: currentView.subjectName } },
+                { label: 'Test Series', view: { name: 'testSeries', sectionName: currentView.sectionName, subjectName: currentView.subjectName, parentSubjectName: currentView.parentSubjectName } },
                 { label: testLabels[currentView.name] }
             );
             break;
             
         // Standalone pages
-        case 'downloadedNotes':
         case 'scoreBoard':
         case 'about':
         case 'account':
         case 'feedback':
             const standaloneLabels = {
-                downloadedNotes: 'Downloads',
                 scoreBoard: 'Score Board',
                 about: 'About',
                 account: 'Account',
@@ -142,6 +148,7 @@ const Header: React.FC<HeaderProps> = ({
       sectionName: result.sectionName,
       subjectName: result.subjectName,
       chapterName: result.chapterName,
+      parentSubjectName: result.parentSubjectName,
     });
     onSearchChange(''); // Clear search query
     setIsFocused(false); // Hide results
@@ -243,7 +250,7 @@ const Header: React.FC<HeaderProps> = ({
                       >
                         <p className="font-semibold text-slate-800 dark:text-slate-200">{result.chapterName}</p>
                         <p className="text-sm text-slate-500 dark:text-slate-400">
-                          {result.sectionName} &gt; {result.subjectName}
+                          {result.sectionName} &gt; {result.parentSubjectName ? `${result.parentSubjectName} > ` : ''}{result.subjectName}
                         </p>
                       </li>
                     ))}

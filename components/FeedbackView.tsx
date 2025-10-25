@@ -1,7 +1,7 @@
 
 
 import React, { useState } from 'react';
-import { View } from '../types';
+import { View, ToastType } from '../types';
 
 // Define a type for feedback entries
 interface FeedbackEntry {
@@ -11,14 +11,19 @@ interface FeedbackEntry {
 
 const FEEDBACK_STORAGE_KEY = 'padhlo-feedback';
 
-const FeedbackView: React.FC<{ setView: (view: View) => void; }> = ({ setView }) => {
+interface FeedbackViewProps {
+  setView: (view: View) => void;
+  addToast: (message: string, type: ToastType) => void;
+}
+
+const FeedbackView: React.FC<FeedbackViewProps> = ({ setView, addToast }) => {
     const [feedback, setFeedback] = useState('');
     const [submitted, setSubmitted] = useState(false);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (feedback.trim() === '') {
-            alert('Please enter your feedback before submitting.');
+            addToast('Please enter your feedback before submitting.', 'error');
             return;
         }
 
@@ -38,7 +43,7 @@ const FeedbackView: React.FC<{ setView: (view: View) => void; }> = ({ setView })
             setFeedback('');
         } catch (error) {
             console.error("Failed to save feedback", error);
-            alert("Sorry, there was an error submitting your feedback.");
+            addToast("Sorry, there was an error submitting your feedback.", 'error');
         }
     };
 

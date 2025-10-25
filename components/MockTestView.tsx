@@ -1,19 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
-import { generateMockTest, analyzeFullMockTestStream, getApiErrorMessage } from '../services/geminiService';
+// Fix: Updated imports to use exported modules from geminiService.
+import { TestGenerator, AnswerAnalyzer, getApiErrorMessage } from '../services/geminiService';
 import { View, MockTestFormat, MockTestQuestion, SubjectiveAnswer, ScoreRecord } from '../types';
 import Spinner from './Spinner';
 import SkeletonLoader from './SkeletonLoader';
 import ErrorMessage from './ErrorMessage';
 import { extractFinalJson } from '../testUtils';
-
-declare global {
-  interface Window {
-    marked: {
-      parse(markdown: string): string;
-    };
-  }
-}
+import MarkdownContent from './MarkdownContent';
 
 // Component for a single Text/Image Question
 const TextQuestionComponent: React.FC<{
@@ -98,7 +92,8 @@ const MockTestView: React.FC<{
         setLoading(true);
         setError(null);
         setIsViewDirty(false);
-        const generatedTest = await generateMockTest(sectionName, subjectName);
+        // Fix: Prefixed with the exported TestGenerator module.
+        const generatedTest = await TestGenerator.generateMockTest(sectionName, subjectName);
         
         const parsedTest = JSON.parse(generatedTest);
         setTestData(parsedTest);
@@ -134,7 +129,8 @@ const MockTestView: React.FC<{
     setAnalysisReport('');
     let fullReport = '';
 
-    analyzeFullMockTestStream(
+    // Fix: Prefixed with the exported AnswerAnalyzer module.
+    AnswerAnalyzer.analyzeFullMockTestStream(
         testData,
         answers,
         (chunk) => {
@@ -236,10 +232,7 @@ const MockTestView: React.FC<{
                  <div className="p-6 bg-slate-100 dark:bg-slate-700/50 rounded-lg">
                     <h4 className="font-bold text-slate-800 dark:text-slate-200 text-2xl mb-4">Detailed Performance Analysis</h4>
                     {isAnalyzing && !analysisReport && <Spinner />}
-                    <article 
-                        className="mt-2 text-slate-700 dark:text-slate-300 prose dark:prose-invert max-w-none"
-                        dangerouslySetInnerHTML={{ __html: window.marked.parse(analysisReport) }}
-                    />
+                    <MarkdownContent content={analysisReport} className="mt-2 text-slate-700 dark:text-slate-300 prose dark:prose-invert max-w-none" />
                 </div>
             </div>
         )}

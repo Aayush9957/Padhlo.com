@@ -1,6 +1,3 @@
-
-
-
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { CaseStudy, MCQ, UserProfile, MockTestFormat, SubjectiveAnswer } from "../types";
 
@@ -78,17 +75,17 @@ export const getApiErrorMessage = (error: any, defaultMessage: string = "An unex
             return error.message;
         }
         if (error.message.includes("API_KEY environment variable not set")) {
-            return "The AI service is not configured. Please ensure the API key is set up correctly by the administrator.";
+            return "The AI service is not configured. Please contact the administrator.";
         }
         if (error.message.includes('429') || error.message.includes('RESOURCE_EXHAUSTED') || error.message.includes('quota')) {
-            return "The AI service is currently busy or your API quota has been exceeded. Please wait a moment and try again. If the problem continues, please check your API plan and billing details.";
+            return "The AI service is currently busy. Please wait a moment and try again.";
         }
         if (error.message.toLowerCase().includes('failed to fetch')) {
             return "Network error. Please check your internet connection and try again.";
         }
     }
      if (error instanceof SyntaxError) {
-        return "The AI returned an invalid format. Please try again.";
+        return "The AI returned an invalid response format. Please try generating the content again.";
     }
     return defaultMessage;
 };
@@ -161,7 +158,8 @@ const enforceImageRateLimit = async (): Promise<void> => {
 
 
 // --- MODULE: DiagramGenerator ---
-const DiagramGenerator = {
+// Fix: Exported DiagramGenerator to make it accessible to other modules.
+export const DiagramGenerator = {
      /**
      * Generates a diagram and returns the markdown string.
      */
@@ -193,7 +191,8 @@ const DiagramGenerator = {
 
 
 // --- MODULE: NoteGenerator ---
-const NoteGenerator = {
+// Fix: Exported NoteGenerator to make it accessible to other modules.
+export const NoteGenerator = {
     /**
      * Generates and streams comprehensive study notes for a specific chapter.
      * Diagrams are NOT generated here; placeholders are inserted instead.
@@ -207,7 +206,7 @@ const NoteGenerator = {
       onComplete: (fullText: string) => void,
       onError: (error: string) => void
     ) {
-      const profileKey = userProfile ? `${userProfile.standard}-${userProfile.exams.sort().join('-')}` : 'default';
+      const profileKey = userProfile ? `${userProfile.exams.sort().join('-')}` : 'default';
       const cacheKey = `notes-text-only-${sectionName}-${subjectName}-${chapterName}-${profileKey}`;
       
       try {
@@ -221,30 +220,25 @@ const NoteGenerator = {
         checkRateLimit();
 
         let tailoringInstruction = `for a "${sectionName}" student.`;
-        if (userProfile) {
-            const standard = userProfile.standard;
+        if (userProfile && userProfile.exams.length > 0) {
             const exams = userProfile.exams.join(', ');
-            if (standard && exams) {
-                tailoringInstruction = `for a "${standard}" student preparing for the ${exams} examinations. Please prioritize concepts, examples, and problem-solving techniques that are highly relevant to these exams.`;
-            } else if (standard) {
-                tailoringInstruction = `for a "${standard}" student.`;
-            } else if (exams) {
-                tailoringInstruction = `for a student preparing for the ${exams} examinations. Please prioritize concepts and examples relevant to these exams.`;
-            }
+            tailoringInstruction = `for a "${sectionName}" student who is also preparing for the ${exams} examinations. Please prioritize concepts, examples, and problem-solving techniques that are highly relevant to these exams.`;
         }
 
         const prompt = `
         You are an expert teacher. Provide comprehensive, well-structured study notes for the chapter "${chapterName}" from the subject "${subjectName}", tailored ${tailoringInstruction}
 
-        The notes must be in Markdown and include:
+        **Formatting Rules:**
+        1.  The notes must be in valid Markdown.
+        2.  **CRITICAL FOR MATH**: For all mathematical formulas, equations, and symbols, you MUST use LaTeX syntax. For inline mathematics (e.g., variables in a sentence), use single dollar signs (e.g., \`$x^2 + y^2 = r^2$\`). For display mathematics (equations on their own line), use double dollar signs (e.g., \`$$ \\int_a^b f(x) \\, dx $$ \`). Your LaTeX should be clean, standard, and unambiguous, mirroring the quality of a professional textbook.
+        3.  When a complex concept needs a visual diagram, insert a placeholder using this exact syntax on a new line: \`[LOAD_DIAGRAM_PROMPT:"A detailed scientific diagram of..."]\`. Do not generate the image yourself. Just insert the placeholder.
+        
+        **Content Structure:**
         1.  **Introduction**: An engaging overview.
         2.  **Core Concepts**: Detailed explanations with headings, subheadings, and bullet points. 
-            **IMPORTANT**: When a complex concept needs a visual diagram, insert a placeholder using this exact syntax on a new line:
-            \`[LOAD_DIAGRAM_PROMPT:"A detailed scientific diagram of..."]\`
-            Do not generate the image yourself. Just insert the placeholder. You can continue to use Mermaid.js diagrams and Markdown tables.
         3.  **Key Takeaways**: A concise summary.
 
-        Ensure content is accurate and relevant to the NCERT 2025 syllabus.
+        Ensure content is accurate and strictly relevant to the CBSE 2025-2026 syllabus.
         `;
 
         const ai = getAiInstance();
@@ -276,7 +270,7 @@ const NoteGenerator = {
       chapterName: string,
       userProfile: UserProfile | null
     ): Promise<string> {
-        const profileKey = userProfile ? `${userProfile.standard}-${userProfile.exams.sort().join('-')}` : 'default';
+        const profileKey = userProfile ? `${userProfile.exams.sort().join('-')}` : 'default';
         const cacheKey = `notes-text-only-${sectionName}-${subjectName}-${chapterName}-${profileKey}`;
 
         try {
@@ -288,29 +282,24 @@ const NoteGenerator = {
             checkRateLimit();
 
             let tailoringInstruction = `for a "${sectionName}" student.`;
-             if (userProfile) { 
-                 const standard = userProfile.standard;
+            if (userProfile && userProfile.exams.length > 0) {
                 const exams = userProfile.exams.join(', ');
-                if (standard && exams) {
-                    tailoringInstruction = `for a "${standard}" student preparing for the ${exams} examinations. Please prioritize concepts, examples, and problem-solving techniques that are highly relevant to these exams.`;
-                } else if (standard) {
-                    tailoringInstruction = `for a "${standard}" student.`;
-                } else if (exams) {
-                    tailoringInstruction = `for a student preparing for the ${exams} examinations. Please prioritize concepts and examples relevant to these exams.`;
-                }
+                tailoringInstruction = `for a "${sectionName}" student who is also preparing for the ${exams} examinations. Please prioritize concepts, examples, and problem-solving techniques that are highly relevant to these exams.`;
             }
             const prompt = `
             You are an expert teacher. Provide comprehensive, well-structured study notes for the chapter "${chapterName}" from the subject "${subjectName}", tailored ${tailoringInstruction}
 
-            The notes must be in Markdown and include:
+            **Formatting Rules:**
+            1.  The notes must be in valid Markdown.
+            2.  **CRITICAL FOR MATH**: For all mathematical formulas, equations, and symbols, you MUST use LaTeX syntax. For inline mathematics (e.g., variables in a sentence), use single dollar signs (e.g., \`$x^2 + y^2 = r^2$\`). For display mathematics (equations on their own line), use double dollar signs (e.g., \`$$ \\int_a^b f(x) \\, dx $$ \`). Your LaTeX should be clean, standard, and unambiguous, mirroring the quality of a professional textbook.
+            3.  When a complex concept needs a visual diagram, insert a placeholder using this exact syntax on a new line: \`[LOAD_DIAGRAM_PROMPT:"A detailed scientific diagram of..."]\`. Do not generate the image yourself. Just insert the placeholder.
+            
+            **Content Structure:**
             1.  **Introduction**: An engaging overview.
             2.  **Core Concepts**: Detailed explanations with headings, subheadings, and bullet points. 
-                **IMPORTANT**: When a complex concept needs a visual diagram, insert a placeholder using this exact syntax on a new line:
-                \`[LOAD_DIAGRAM_PROMPT:"A detailed scientific diagram of..."]\`
-                Do not generate the image yourself. Just insert the placeholder. You can continue to use Mermaid.js diagrams and Markdown tables.
             3.  **Key Takeaways**: A concise summary.
 
-            Ensure content is accurate and relevant to the NCERT 2025 syllabus.
+            Ensure content is accurate and strictly relevant to the CBSE 2025-2026 syllabus.
             `;
 
             const ai = getAiInstance();
@@ -330,13 +319,20 @@ const NoteGenerator = {
 };
 
 // --- MODULE: TestGenerator ---
-const TestGenerator = {
+// Fix: Exported TestGenerator to make it accessible to other modules.
+export const TestGenerator = {
     /**
      * Generates a specified number of long-answer questions.
      */
     async generateLongAnswerQuestions(sectionName: string, subjectName: string, chapters: string[], count: number): Promise<string> {
-        const topics = chapters.length > 0 ? `from the specific chapters: ${chapters.join(', ')}` : 'based on the NCERT syllabus';
-        const prompt = `You are an AI assistant optimized for speed and accuracy. Generate ${count} unique long-answer questions for the subject '${subjectName}' for a '${sectionName}' student. The questions should be challenging, ${topics}, and reflect patterns from recent exams. Crucially, include a few questions that specifically require the student to draw a diagram, create a flowchart, or label a chart to fully answer the question. For example: "Explain the process of mitosis with a neat, labelled diagram." or "Draw a flowchart to illustrate the carbon cycle.". Provide the output as a JSON array of strings.`;
+        const topics = chapters.length > 0 ? `from the specific chapters: ${chapters.join(', ')}` : 'based on the CBSE 2025-2026 syllabus';
+        
+        let sourceInstruction = `and reflect patterns from recent CBSE board exams and sample papers.`;
+        if ((sectionName === 'Class 11' || sectionName === 'Class 12') && subjectName === 'Physics') {
+            sourceInstruction = `and be of a high standard, reflecting patterns and difficulty levels from sources like the CBSE Question Bank, official sample papers, and renowned textbooks such as HC Verma and SL Arora.`;
+        }
+        
+        const prompt = `You are an AI assistant optimized for speed and accuracy. Generate ${count} unique long-answer questions for the subject '${subjectName}' for a '${sectionName}' student. The questions should be challenging, ${topics}, ${sourceInstruction} Crucially, include a few questions that specifically require the student to draw a diagram, create a flowchart, or label a chart to fully answer the question. For example: "Explain the process of mitosis with a neat, labelled diagram." or "Draw a flowchart to illustrate the carbon cycle.". For any mathematical content, use LaTeX syntax (e.g., \`$x^2$\` or \`$$...$$\`). Your LaTeX should be clean, standard, and unambiguous, mirroring the quality of a professional textbook. Provide the output as a JSON array of strings.`;
          try {
             const ai = getAiInstance();
             const sortedChapters = [...chapters].sort().join(',');
@@ -359,8 +355,14 @@ const TestGenerator = {
      * Generates a specified number of case-based study questions.
      */
     async generateCaseBasedQuestions(sectionName: string, subjectName: string, chapters: string[], count: number): Promise<string> {
-        const topics = chapters.length > 0 ? `The scenarios should be based on concepts from the following chapters: ${chapters.join(', ')}.` : '';
-        const prompt = `You are an AI assistant optimized for speed and accuracy. Generate ${count} unique case-based study scenarios for the subject '${subjectName}' for a '${sectionName}' student. ${topics} Each case study should present a scenario, passage, or data set, followed by a few analytical questions related to it. Ensure that some of the case studies include data presented in tables, simple charts, or diagrams. The questions should then require analysis of this visual data or ask the student to create their own diagram or chart based on the scenario. For example, a case could provide a data table of an experiment, and a question could be "Plot this data on a graph and explain the trend." Provide the output as a JSON array of objects. Each object must have two keys: "case" (a string containing the case study) and "questions" (an array of strings representing the questions for that case).`;
+        const topics = chapters.length > 0 ? `The scenarios should be based on concepts from the following chapters, following the CBSE 2025-2026 curriculum: ${chapters.join(', ')}.` : '';
+        
+        let sourceInstruction = '';
+        if ((sectionName === 'Class 11' || sectionName === 'Class 12') && subjectName === 'Physics') {
+            sourceInstruction = `The case studies should be of a high standard, inspired by conceptual problems and real-world applications found in renowned textbooks like HC Verma, SL Arora, and the official CBSE Question Bank.`;
+        }
+
+        const prompt = `You are an AI assistant optimized for speed and accuracy. Generate ${count} unique case-based study scenarios for the subject '${subjectName}' for a '${sectionName}' student. ${topics} ${sourceInstruction} Each case study should present a scenario, passage, or data set, followed by a few analytical questions related to it. Ensure that some of the case studies include data presented in tables, simple charts, or diagrams. The questions should then require analysis of this visual data or ask the student to create their own diagram or chart based on the scenario. For any mathematical content, use LaTeX syntax (e.g., \`$x^2$\` or \`$$...$$\`). Your LaTeX should be clean, standard, and unambiguous, mirroring the quality of a professional textbook. Provide the output as a JSON array of objects. Each object must have two keys: "case" (a string containing the case study) and "questions" (an array of strings representing the questions for that case).`;
          try {
             const ai = getAiInstance();
             const sortedChapters = [...chapters].sort().join(',');
@@ -392,8 +394,14 @@ const TestGenerator = {
      * Generates a specified number of multiple-choice questions.
      */
     async generateMCQs(sectionName: string, subjectName: string, chapters: string[], count: number): Promise<string> {
-        const topics = chapters.length > 0 ? `from the specific chapters: ${chapters.join(', ')}` : 'based on the NCERT syllabus';
-        const prompt = `You are an AI assistant optimized for speed and accuracy. Generate ${count} unique multiple-choice questions (MCQs) for the subject '${subjectName}' for a '${sectionName}' student. The questions should be challenging, ${topics}, and reflect patterns from recent exams. Each question must have four options. Provide the output as a JSON array of objects. Each object must have four keys: "question" (string), "options" (an array of 4 strings), "correctAnswer" (a string that exactly matches one of the options), and "explanation" (a brief string explaining the correct answer).`;
+        const topics = chapters.length > 0 ? `from the specific chapters: ${chapters.join(', ')}` : 'based on the CBSE 2025-2026 syllabus';
+        
+        let sourceInstruction = `and reflect patterns from recent CBSE board exams and sample papers.`;
+        if ((sectionName === 'Class 11' || sectionName === 'Class 12') && subjectName === 'Physics') {
+            sourceInstruction = `and be of a high standard, reflecting patterns and difficulty levels from sources like the CBSE Question Bank, official sample papers, and renowned textbooks such as HC Verma and SL Arora.`;
+        }
+
+        const prompt = `You are an AI assistant optimized for speed and accuracy. Generate ${count} unique multiple-choice questions (MCQs) for the subject '${subjectName}' for a '${sectionName}' student. The questions should be challenging, ${topics}, ${sourceInstruction} For any mathematical content, use LaTeX syntax (e.g., \`$x^2$\` or \`$$...$$\`). Your LaTeX should be clean, standard, and unambiguous, mirroring the quality of a professional textbook. Each question must have four options. Provide the output as a JSON array of objects. Each object must have four keys: "question" (string), "options" (an array of 4 strings), "correctAnswer" (a string that exactly matches one of the options), and "explanation" (a brief string explaining the correct answer).`;
 
         try {
             const ai = getAiInstance();
@@ -430,18 +438,26 @@ const TestGenerator = {
      */
     async generateMockTest(sectionName: string, subjectName: string): Promise<string> {
         const formatDetails: { [key: string]: string } = {
-            'Class 11': 'the official CBSE Class 11 board exam format',
-            'Class 12': 'the official CBSE Class 12 board exam format',
-            'NEET': 'the latest official NEET (UG) exam format including sections and marking scheme',
-            'JEE': 'the latest official JEE Mains exam format including sections for different question types and marking scheme',
+            'Class 9': 'the official CBSE Class 9 final exam format for the 2025-2026 session',
+            'Class 10': 'the official CBSE Class 10 board exam format for the 2025-2026 session',
+            'Class 11': 'the official CBSE Class 11 final exam format for the 2025-2026 session',
+            'Class 12': 'the official CBSE Class 12 board exam format for the 2025-2026 session',
+            'NEET': 'the latest official NEET (UG) exam format including sections and marking scheme for the 2025-2026 session',
+            'JEE': 'the latest official JEE Mains exam format including sections for different question types and marking scheme for the 2025-2026 session',
         };
+
+        let sourceInstruction = `The questions must be sourced from the latest CBSE 2025-2026 syllabus and pattern, including official sample papers, previous 4 years' CBSE question papers, and reputable question banks like Arihant, Educart, and Oswal.`;
+        if ((sectionName === 'Class 11' || sectionName === 'Class 12') && subjectName === 'Physics') {
+            sourceInstruction = `The questions must be of a very high standard, sourced from the latest CBSE 2025-2026 syllabus and pattern. Critically, you must include a mix of questions inspired by official CBSE sample papers, the CBSE Question Bank, and renowned, conceptually-demanding textbooks like HC Verma and SL Arora. Ensure the difficulty level is appropriate for a final board exam.`;
+        }
 
         const prompt = `You are an AI assistant and expert question paper setter. Create a full-length, high-quality mock test paper for '${subjectName}' for a '${sectionName}' student. 
         
         **CRITICAL INSTRUCTIONS:**
         1.  The paper must strictly follow ${formatDetails[sectionName] || 'a standard competitive exam format'}.
-        2.  The questions must be sourced from the latest CBSE pattern, including official sample papers, previous 4 years' CBSE question papers, and reputable question banks like Arihant, Educart, and Oswal.
+        2.  ${sourceInstruction}
         3.  The total marks for the test must be exactly 80. Distribute marks across sections and questions appropriately to sum up to 80.
+        4.  For all mathematical content (equations, symbols, variables), you MUST use LaTeX syntax for proper rendering (e.g., \`$x^2$\` or \`$$...$$\`). Your LaTeX should be clean, standard, and unambiguous, mirroring the quality of a professional textbook.
         
         Generate the output as a single, valid JSON object. The root object should have keys: "title", "subject", "totalMarks" (must be 80), "duration", and "sections". 
         "sections" should be an array of objects, where each object has "title", "instructions", and "questions".
@@ -497,7 +513,8 @@ const TestGenerator = {
 };
 
 // --- MODULE: AnswerAnalyzer ---
-const AnswerAnalyzer = {
+// Fix: Exported AnswerAnalyzer to make it accessible to other modules.
+export const AnswerAnalyzer = {
     /**
      * Generates an ideal model answer for a given question.
      */
@@ -523,7 +540,8 @@ const AnswerAnalyzer = {
         const prompt = `
         You are an expert teacher. Provide a comprehensive, well-structured, and ideal model answer for the following question, tailored for a "${sectionName}" student studying "${subjectName}". 
         The question is: "${question}".
-        Format the answer clearly using Markdown, including headings, bullet points, and bold text for key terms. Ensure the answer is accurate and detailed enough to earn full marks.
+        Format the answer clearly using Markdown. **CRITICAL FOR MATH**: For all mathematical formulas, equations, and symbols, you MUST use LaTeX syntax. For inline mathematics (e.g., variables in a sentence), use single dollar signs (e.g., \`$x^2$\`). For display mathematics (equations on their own line), use double dollar signs (e.g., \`$$...$$\`). Your LaTeX should be clean, standard, and unambiguous, mirroring the quality of a professional textbook.
+        Ensure the answer is accurate and detailed enough to earn full marks according to the CBSE 2025-2026 curriculum.
         `;
 
         const ai = getAiInstance();
@@ -560,7 +578,7 @@ const AnswerAnalyzer = {
         2.  **Identify Mistakes**: Pinpoint any factual errors, logical fallacies, calculation mistakes, or significant omissions.
         3.  **Provide Corrections**: For each mistake, explain why it's incorrect and provide the correct information or method.
         4.  **Give Overall Feedback**: Summarize the strengths and weaknesses of the answer and offer constructive advice for improvement.
-        5.  **Format clearly**: Use Markdown with headings, bold text, and bullet points to structure your feedback, making it easy to read.
+        5.  **Format clearly**: Use Markdown with headings, bold text, and bullet points. **CRITICAL FOR MATH**: Use LaTeX syntax for all mathematical expressions (e.g., \`$x^2$\` or \`$$...$$\`). Your LaTeX should be clean, standard, and unambiguous, mirroring the quality of a professional textbook.
         **Question:** "${question}"
         **Student's Answer:** "${answer}"
         Begin your analysis now.
@@ -595,7 +613,7 @@ const AnswerAnalyzer = {
         2.  **Identify Mistakes**: Pinpoint any factual errors, logical fallacies, calculation mistakes, or significant omissions.
         3.  **Provide Corrections**: For each mistake, explain why it's incorrect and provide the correct information or method.
         4.  **Give Overall Feedback**: Summarize the strengths and weaknesses of the answer and offer constructive advice for improvement.
-        5.  **Format clearly**: Use Markdown with headings, bold text, and bullet points to structure your feedback, making it easy to read.
+        5.  **Format clearly**: Use Markdown with headings, bold text, and bullet points. **CRITICAL FOR MATH**: Use LaTeX syntax for all mathematical expressions (e.g., \`$x^2$\` or \`$$...$$\`). Your LaTeX should be clean, standard, and unambiguous, mirroring the quality of a professional textbook.
         **Question:** "${question}"
         Begin your analysis now.
         `;
@@ -643,10 +661,10 @@ const AnswerAnalyzer = {
         const prompt = `
         You are an expert teacher providing feedback on a student's MCQ test performance. The student made some mistakes. Your task is to:
         1.  **Summarize Performance**: Start with a brief, encouraging summary of their performance.
-        2.  **Analyze Mistakes**: For each incorrect answer provided below, explain the underlying concept the student likely misunderstood.
+        2.  **Analyze Mistakes**: For each incorrect answer provided below, explain the underlying concept the student likely misunderstood, based on the CBSE 2025-2026 curriculum.
         3.  **Provide Clarifications**: Offer clear, concise explanations for the correct answers.
         4.  **Suggest Improvements**: Give actionable advice on how the student can improve in these specific areas.
-        5.  **Format clearly**: Use Markdown with headings, bold text, and bullet points to structure your analysis, making it easy to read and learn from.
+        5.  **Format clearly**: Use Markdown with headings, bold text, and bullet points. **CRITICAL FOR MATH**: Use LaTeX syntax for all mathematical expressions (e.g., \`$x^2$\` or \`$$...$$\`). Your LaTeX should be clean, standard, and unambiguous, mirroring the quality of a professional textbook.
         **Incorrectly Answered Questions:**
         ${JSON.stringify(incorrectAnswers, null, 2)}
         Begin your analysis now.
@@ -696,7 +714,7 @@ const AnswerAnalyzer = {
       }
 
       const prompt = `
-      You are a strict but fair examiner. A student has completed a ${testType} test and submitted their answers for grading and analysis.
+      You are a strict but fair examiner following the CBSE 2025-2026 marking scheme. A student has completed a ${testType} test and submitted their answers for grading and analysis.
       **Instructions for Grading:**
       1.  The test consists of ${questions.length} questions. Each question is worth ${marksPerQuestion} marks. The total marks for the test is ${totalMarks}.
       2.  Evaluate each of the student's answers based on accuracy, completeness, and clarity.
@@ -719,7 +737,7 @@ const AnswerAnalyzer = {
       ${JSON.stringify(questions, null, 2)}
       **Student's Answers:**
       ${JSON.stringify(answerMap, null, 2)}
-      Begin your evaluation now. Format the entire response in well-structured Markdown.
+      Begin your evaluation now. Format the entire response in well-structured Markdown. **For any mathematical content in your feedback, use LaTeX syntax. Your LaTeX should be clean, standard, and unambiguous, mirroring the quality of a professional textbook.**
       `;
       
       parts.unshift({ text: prompt });
@@ -772,7 +790,7 @@ const AnswerAnalyzer = {
         }
 
         const prompt = `
-        You are a strict but fair CBSE board examiner. A student has submitted their answers for a full mock test for ${testData.totalMarks} marks.
+        You are a strict but fair CBSE board examiner for the 2025-2026 session. A student has submitted their answers for a full mock test for ${testData.totalMarks} marks.
 
         **Instructions for Grading:**
         1.  Review the entire test structure (provided below) and the student's answers.
@@ -795,7 +813,7 @@ const AnswerAnalyzer = {
         **Student's Submitted Answers:**
         ${JSON.stringify(answerMap, null, 2)}
 
-        Begin your evaluation now. Format the entire report in well-structured Markdown.
+        Begin your evaluation now. Format the entire report in well-structured Markdown. **For any mathematical content in your feedback, use LaTeX syntax. Your LaTeX should be clean, standard, and unambiguous, mirroring the quality of a professional textbook.**
         `;
 
         parts.unshift({ text: prompt });
@@ -820,13 +838,14 @@ const AnswerAnalyzer = {
 };
 
 // --- MODULE: FlashcardGenerator ---
-const FlashcardGenerator = {
+// Fix: Exported FlashcardGenerator to make it accessible to other modules.
+export const FlashcardGenerator = {
     /**
      * Generates a set of key term/definition flashcards for a given chapter.
      */
     async generateFlashcards(sectionName: string, subjectName: string, chapterName: string): Promise<string> {
-        const prompt = `You are an AI assistant specialized in creating educational content. Generate a concise set of 15-20 key terms and their definitions for the chapter "${chapterName}" in the subject "${subjectName}" for a "${sectionName}" student. The terms should be fundamental concepts from the chapter, and the definitions should be clear, simple, and easy to memorize. Provide the output as a JSON array of objects. Each object must have two keys: "term" (a string containing the key term) and "definition" (a string containing its definition).`;
-        
+        const prompt = `You are an AI assistant specialized in creating educational flashcards. Generate 15 to 20 key terms and their concise definitions for the chapter '${chapterName}' from the subject '${subjectName}' for a '${sectionName}' student. The content must be strictly based on the CBSE 2025-2026 curriculum. For any mathematical content, use LaTeX syntax (e.g., \`$x^2$\` or \`$$...$$\`). Your LaTeX should be clean, standard, and unambiguous, mirroring the quality of a professional textbook. Provide the output as a JSON array of objects. Each object must have two keys: "term" (string) and "definition" (string).`;
+
         try {
             const ai = getAiInstance();
             const cacheKey = `flashcards-${sectionName}-${subjectName}-${chapterName}`;
@@ -841,7 +860,7 @@ const FlashcardGenerator = {
                             type: Type.OBJECT,
                             properties: {
                                 term: { type: Type.STRING },
-                                definition: { type: Type.STRING },
+                                definition: { type: Type.STRING }
                             },
                             required: ["term", "definition"]
                         }
@@ -854,101 +873,3 @@ const FlashcardGenerator = {
         }
     }
 };
-
-// Fix: Add VideoGenerator module and generateVideoSummary function
-// --- MODULE: VideoGenerator ---
-const VideoGenerator = {
-    /**
-     * Generates a short video summary of a chapter.
-     */
-    async generateVideoSummary(
-        chapterName: string,
-        chapterContent: string,
-        onStatusUpdate: (status: string) => void
-    ): Promise<string> {
-        try {
-            const ai = getAiInstance();
-            
-            onStatusUpdate("Crafting a script for the video summary...");
-            const prompt = `Create a short, engaging, 60-second educational video summary for the chapter "${chapterName}".
-            The video should cover the main topics from the following notes:
-            ---
-            ${chapterContent.substring(0, 4000)}
-            ---
-            The video should be visually appealing with clear explanations, suitable for a student. Use stock footage or animations. Focus on key concepts.
-            `;
-            
-            onStatusUpdate("Sending request to the video model...");
-            let operation = await ai.models.generateVideos({
-                model: 'veo-3.1-fast-generate-preview',
-                prompt: prompt,
-                config: {
-                    numberOfVideos: 1,
-                    resolution: '720p',
-                    aspectRatio: '16:9'
-                }
-            });
-            
-            onStatusUpdate("Video generation is in progress... This may take a few minutes.");
-            while (!operation.done) {
-                await new Promise(resolve => setTimeout(resolve, 10000)); // Poll every 10 seconds
-                operation = await ai.operations.getVideosOperation({ operation: operation });
-            }
-
-            onStatusUpdate("Finalizing video...");
-            const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-
-            if (!downloadLink) {
-                throw new Error("Video generation completed, but no download link was found.");
-            }
-            
-            const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
-            if (!apiKey) {
-                throw new Error("API_KEY environment variable not set, cannot fetch video.");
-            }
-            const fullUrl = `${downloadLink}&key=${apiKey}`;
-
-            onStatusUpdate("Downloading video...");
-            const response = await fetch(fullUrl);
-            if (!response.ok) {
-                const errorBody = await response.text();
-                console.error("Video download failed with body:", errorBody);
-                throw new Error(`Failed to download video. Status: ${response.status}`);
-            }
-            const videoBlob = await response.blob();
-            const objectUrl = URL.createObjectURL(videoBlob);
-            
-            return objectUrl;
-
-        } catch (e: any) {
-            console.error("Video generation failed:", e);
-            if (e.message?.includes('Requested entity was not found')) {
-                 throw new Error("Video generation failed. This might be an API key error. Please try selecting your API key again.");
-            }
-            const errorMessage = getApiErrorMessage(e, "Could not generate the video summary.");
-            throw new Error(errorMessage);
-        }
-    }
-};
-
-
-// --- PUBLIC API EXPORTS ---
-export const { generateDiagram } = DiagramGenerator;
-export const { generateChapterNotesStream, generateChapterNotesText } = NoteGenerator;
-export const {
-    generateLongAnswerQuestions,
-    generateCaseBasedQuestions,
-    generateMCQs,
-    generateMockTest
-} = TestGenerator;
-export const {
-    generateModelAnswerStream,
-    analyzeTypedAnswerStream,
-    analyzeHandwrittenAnswerStream,
-    analyzeMCQPerformanceStream,
-    analyzeSubjectiveTestStream,
-    analyzeFullMockTestStream
-} = AnswerAnalyzer;
-export const { generateFlashcards } = FlashcardGenerator;
-// Fix: Export the new video generation function
-export const { generateVideoSummary } = VideoGenerator;

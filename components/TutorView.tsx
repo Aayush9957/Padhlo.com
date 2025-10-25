@@ -1,20 +1,10 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, Chat } from "@google/genai";
 import { View } from '../types';
 import Spinner from './Spinner';
 import LoadingView from './LoadingView';
 import ErrorMessage from './ErrorMessage';
-
-// Fix: Added global declaration for `window.marked` to satisfy TypeScript,
-// as it is used for parsing Markdown content from the AI tutor.
-declare global {
-  interface Window {
-    marked: {
-      parse(markdown: string): string;
-    };
-  }
-}
+import MarkdownContent from './MarkdownContent';
 
 interface Message {
     role: 'user' | 'model';
@@ -50,7 +40,7 @@ const TutorView: React.FC<TutorViewProps> = ({ sectionName, subjectName, setView
             const newChat = ai.chats.create({
                 model: 'gemini-flash-lite-latest',
                 config: {
-                    systemInstruction: `You are an expert tutor for the subject '${subjectName}' for a '${sectionName}' student. Your goal is to help the student understand concepts, answer their questions, and explain topics from the syllabus in a clear and encouraging way. Keep your responses concise and easy to understand.`,
+                    systemInstruction: `You are an expert tutor for the subject '${subjectName}' for a '${sectionName}' student. Your goal is to help the student understand concepts, answer their questions, and explain topics from the syllabus in a clear and encouraging way. Format your responses in well-structured Markdown, like a digital textbook page. CRITICAL FOR MATH: For all mathematical formulas, equations, and symbols, you MUST use LaTeX syntax. For inline mathematics (e.g., variables in a sentence), use single dollar signs (e.g., \`$x^2$\`). For display mathematics (equations on their own line), use double dollar signs (e.g., \`$$...$$\`). Your LaTeX should be clean, standard, and unambiguous, mirroring the quality of a professional textbook.`,
                 },
             });
             setChat(newChat);
@@ -140,6 +130,20 @@ const TutorView: React.FC<TutorViewProps> = ({ sectionName, subjectName, setView
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 h-[calc(100vh-80px)] flex flex-col">
+       <style>{`
+          .prose {
+             --tw-prose-bullets: #3b82f6;
+             --tw-prose-invert-bullets: #60a5fa;
+          }
+          .prose ul > li::before {
+             content: '•';
+             color: var(--tw-prose-bullets);
+             font-weight: bold;
+          }
+          .dark .prose ul > li::before {
+             color: var(--tw-prose-invert-bullets);
+          }
+       `}</style>
       <div className="flex-shrink-0">
         <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-200 mb-2">AI Tutor: {subjectName}</h2>
         <p className="text-slate-600 dark:text-slate-400 mb-4">Your personal study assistant.</p>
@@ -160,7 +164,7 @@ const TutorView: React.FC<TutorViewProps> = ({ sectionName, subjectName, setView
                     ? 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200'
                     : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
                 }`}>
-                {msg.text ? <div className="prose dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: window.marked.parse(msg.text) }} /> : <Spinner />}
+                {msg.text ? <MarkdownContent content={msg.text} className="prose dark:prose-invert max-w-none" /> : <Spinner />}
                 </div>
             </div>
             ))}

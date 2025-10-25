@@ -1,10 +1,12 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { View, Flashcard } from '../types';
-import { generateFlashcards, getApiErrorMessage } from '../services/geminiService';
+// Fix: Updated imports to use exported modules from geminiService.
+import { FlashcardGenerator, getApiErrorMessage } from '../services/geminiService';
 import SkeletonLoader from './SkeletonLoader';
 import ErrorMessage from './ErrorMessage';
 import LoadingView from './LoadingView';
+import MarkdownContent from './MarkdownContent';
 
 interface FlashcardViewProps {
   sectionName: string;
@@ -36,7 +38,8 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ sectionName, subjectName,
       try {
         setLoading(true);
         setError(null);
-        const generated = await generateFlashcards(sectionName, subjectName, chapterName);
+        // Fix: Prefixed with the exported FlashcardGenerator module.
+        const generated = await FlashcardGenerator.generateFlashcards(sectionName, subjectName, chapterName);
         const cards: Flashcard[] = JSON.parse(generated);
         setAllFlashcards(cards);
         setCurrentDeck(cards);
@@ -222,7 +225,7 @@ const FlashcardView: React.FC<FlashcardViewProps> = ({ sectionName, subjectName,
                 </div>
                 {/* Back */}
                 <div className={`card-back bg-slate-50 dark:bg-slate-700 rounded-lg shadow-2xl cursor-pointer border-2 ${getCardStatusStyle()}`}>
-                  <p className="text-md md:text-lg text-slate-700 dark:text-slate-300">{currentCard.definition}</p>
+                  <MarkdownContent content={currentCard.definition} className="text-md md:text-lg text-slate-700 dark:text-slate-300" />
                 </div>
               </div>
             </div>
